@@ -61,6 +61,17 @@ Firmware for the Fillhead material injection system, built on the Teknic ClearCo
 - `Debug/fillhead.bin` - Binary firmware image
 - `Debug/fillhead.uf2` - UF2 format for bootloader flashing
 
+### Troubleshooting
+
+- **Microchip Studio instead of Atmel Studio**  
+  The generated Makefiles use `PACK_BASE` and `TOOLCHAIN_BASE`. If your install is under a different path (e.g. Microchip Studio), either:
+  - Open the solution in the IDE and do **Clean Solution** then **Rebuild Solution** so the IDE regenerates the Makefiles with your paths, or
+  - Before building from the command line, set:
+    - `PACK_BASE=C:\Program Files (x86)\Microchip\Studio\7.0\Packs`
+    - `TOOLCHAIN_BASE=C:\Program Files (x86)\Microchip\Studio\7.0\toolchain`
+- **`arm_math.h: No such file or directory`**  
+  Install the **ARM CMSIS 4.5.0** (and 5.4.0) pack from the IDE’s Pack Manager (or equivalent) so `arm_math.h` is available under your packs folder.
+
 ## Flashing
 
 ### Via BR Equipment Control App (Recommended for Updates)

@@ -164,6 +164,13 @@ class CommsController {
      * @param port The new port number.
      */
 	void setGuiPort(uint16_t port) { m_guiPort = port; }
+	
+	/**
+	 * @brief Notifies the comms controller that USB host has sent data.
+	 * @details Called when a command is received over USB. This marks the
+	 * USB host as connected and resets the health check timer.
+	 */
+	void notifyUsbHostActive();
 
 	private:
 	/**
@@ -174,11 +181,11 @@ class CommsController {
 	void processUdp();
 
     /**
-     * @brief Processes the outgoing message queue.
-     * @details Dequeues one message from the TX queue (if available) and sends it
-     * over UDP to its destination.
+     * @brief Processes incoming USB serial data.
+     * @details Reads characters from the USB serial port, buffers them until
+     * a newline is received, then enqueues the complete message into the RX queue.
      */
-	void processTxQueue();
+	void processUsbSerial();
 
     /**
      * @brief Configures and initializes the Ethernet hardware.
@@ -187,6 +194,13 @@ class CommsController {
      */
 	void setupEthernet();
 
+    /**
+     * @brief Processes the outgoing message queue.
+     * @details Dequeues one message from the TX queue (if available) and sends it
+     * over UDP and/or USB to its destination(s), while honoring USB backpressure.
+     */
+	void processTxQueue();
+	
     /**
      * @brief Configures and initializes the USB serial port.
      * @details This function sets up the USB port to act as a CDC (serial) device,
@@ -209,4 +223,8 @@ class CommsController {
 	Message m_txQueue[TX_QUEUE_SIZE];   ///< The circular buffer for outgoing messages.
 	volatile int m_txQueueHead;         ///< Index of the next free slot in the TX queue.
 	volatile int m_txQueueTail;         ///< Index of the next message to be sent from the TX queue.
+	
+	// USB host health tracking
+	uint32_t m_lastUsbHealthy;
+	bool m_usbHostConnected;
 };

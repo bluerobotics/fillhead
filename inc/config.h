@@ -13,13 +13,22 @@
 #include "ClearCore.h"
 
 //==================================================================================================
-// Network Configuration
+// Device Identity & Network Configuration
 //==================================================================================================
+/**
+ * @name Device Identity
+ * @{
+ */
+#define DEVICE_NAME_UPPER               "FILLHEAD" ///< Device name in uppercase for message prefixes and logs.
+#define DEVICE_NAME_LOWER               "fillhead" ///< Device name in lowercase for identifiers.
+/** @} */
+
 /**
  * @name Network and Communication Settings
  * @{
  */
 #define LOCAL_PORT                      8888      ///< The UDP port this device listens on for incoming commands.
+#define CLIENT_PORT                     6272      ///< The UDP port the GUI client listens on.
 #define MAX_PACKET_LENGTH               1024      ///< Maximum size in bytes for a single UDP packet. Must be large enough for the longest telemetry string.
 #define RX_QUEUE_SIZE                   32        ///< Number of incoming messages that can be buffered before processing.
 #define TX_QUEUE_SIZE                   32        ///< Number of outgoing messages that can be buffered before sending.
@@ -36,6 +45,67 @@
  */
 #define STATUS_MESSAGE_BUFFER_SIZE      256       ///< Standard buffer size for composing status and error messages.
 #define POST_ABORT_DELAY_MS             100       ///< Delay in milliseconds after an abort command to allow motors to come to a complete stop.
+/** @} */
+
+//==================================================================================================
+// Watchdog Timer Configuration
+//==================================================================================================
+/**
+ * @name Watchdog Timer Configuration
+ * @{
+ */
+#define WATCHDOG_ENABLED                    true      ///< Enable/disable watchdog timer. When enabled, system must feed it regularly or motors will be disabled.
+#define WATCHDOG_TIMEOUT_MS                 256       ///< Watchdog timeout period in milliseconds. System will reset if not fed within this time.
+#define WATCHDOG_RECOVERY_FLAG              0xDEADBEEF ///< Magic number written to backup register to indicate watchdog recovery.
+
+// Breadcrumb codes to identify where the watchdog timeout occurred.
+// These mirror the Pressboi definitions so diagnostic tools can interpret both devices consistently.
+#define WD_BREADCRUMB_SAFETY_CHECK          0x01      ///< Watchdog timeout in safety check
+#define WD_BREADCRUMB_COMMS_UPDATE          0x02      ///< Watchdog timeout in communications update
+#define WD_BREADCRUMB_RX_DEQUEUE            0x03      ///< Watchdog timeout in RX message dequeue
+#define WD_BREADCRUMB_UPDATE_STATE          0x04      ///< Watchdog timeout in state machine update
+#define WD_BREADCRUMB_FORCE_UPDATE          0x05      ///< Watchdog timeout in force/vacuum/heater update
+#define WD_BREADCRUMB_MOTOR_UPDATE          0x06      ///< Watchdog timeout in motor update
+#define WD_BREADCRUMB_TELEMETRY             0x07      ///< Watchdog timeout in telemetry publishing
+#define WD_BREADCRUMB_UDP_PROCESS           0x08      ///< Watchdog timeout in UDP packet processing
+#define WD_BREADCRUMB_USB_PROCESS           0x09      ///< Watchdog timeout in USB serial processing
+#define WD_BREADCRUMB_TX_QUEUE              0x0A      ///< Watchdog timeout in TX queue processing
+#define WD_BREADCRUMB_UDP_SEND              0x0B      ///< Watchdog timeout in UDP packet send
+#define WD_BREADCRUMB_NETWORK_REFRESH       0x0C      ///< Watchdog timeout in network packet refresh
+#define WD_BREADCRUMB_USB_SEND              0x0D      ///< Watchdog timeout in USB send operation
+#define WD_BREADCRUMB_USB_RECONNECT         0x0E      ///< Watchdog timeout in USB reconnection handling
+#define WD_BREADCRUMB_USB_RECOVERY          0x0F      ///< Watchdog timeout in USB recovery operation
+#define WD_BREADCRUMB_REPORT_EVENT          0x10      ///< Watchdog timeout in reportEvent (start)
+#define WD_BREADCRUMB_ENQUEUE_TX            0x11      ///< Watchdog timeout in enqueueTx
+#define WD_BREADCRUMB_MOTOR_IS_FAULT        0x12      ///< Watchdog timeout in motor fault check
+#define WD_BREADCRUMB_MOTOR_STATE_SWITCH    0x13      ///< Watchdog timeout in state machine switch
+#define WD_BREADCRUMB_PROCESS_TX_QUEUE      0x14      ///< Watchdog timeout in processTxQueue start
+#define WD_BREADCRUMB_TX_QUEUE_DEQUEUE      0x15      ///< Watchdog timeout in TX queue dequeue
+#define WD_BREADCRUMB_TX_QUEUE_UDP          0x16      ///< Watchdog timeout in TX queue UDP send
+#define WD_BREADCRUMB_TX_QUEUE_USB          0x17      ///< Watchdog timeout in TX queue USB send
+#define WD_BREADCRUMB_DISPATCH_CMD          0x18      ///< Watchdog timeout in dispatchCommand
+#define WD_BREADCRUMB_PARSE_CMD             0x19      ///< Watchdog timeout in parseCommand
+#define WD_BREADCRUMB_MOTOR_FAULT_REPORT    0x1A      ///< Watchdog timeout in motor fault report
+#define WD_BREADCRUMB_STATE_BUSY_CHECK      0x1B      ///< Watchdog timeout in motor busy check
+#define WD_BREADCRUMB_UDP_PACKET_READ       0x1C      ///< Watchdog timeout in UDP packet read
+#define WD_BREADCRUMB_RX_ENQUEUE            0x1D      ///< Watchdog timeout in RX enqueue
+#define WD_BREADCRUMB_USB_AVAILABLE         0x1E      ///< Watchdog timeout checking USB available
+#define WD_BREADCRUMB_USB_READ              0x1F      ///< Watchdog timeout in USB read
+#define WD_BREADCRUMB_NETWORK_INPUT         0x20      ///< Watchdog timeout in network low_level_input
+#define WD_BREADCRUMB_LWIP_INPUT            0x21      ///< Watchdog timeout in ethernetif_input (lwIP)
+#define WD_BREADCRUMB_LWIP_TIMEOUT          0x22      ///< Watchdog timeout in sys_check_timeouts (lwIP)
+#define WD_BREADCRUMB_SETUP                 0xFE      ///< Watchdog timeout during setup (before loop)
+#define WD_BREADCRUMB_SETUP_MOTOR_MODE      0xF0      ///< Watchdog timeout in motor mode setup
+#define WD_BREADCRUMB_SETUP_COMMS           0xF1      ///< Watchdog timeout in comms.setup()
+#define WD_BREADCRUMB_SETUP_MOTOR           0xF2      ///< Watchdog timeout in motor setup
+#define WD_BREADCRUMB_SETUP_FORCE           0xF3      ///< Watchdog timeout in vacuum/heater setup
+#define WD_BREADCRUMB_SETUP_WD_RECOVERY     0xF4      ///< Watchdog timeout in handleWatchdogRecovery()
+#define WD_BREADCRUMB_SETUP_WD_INIT         0xF5      ///< Watchdog timeout in initializeWatchdog()
+#define WD_BREADCRUMB_SETUP_USB             0xF6      ///< Watchdog timeout in setupUsbSerial()
+#define WD_BREADCRUMB_SETUP_ETHERNET        0xF7      ///< Watchdog timeout in setupEthernet()
+#define WD_BREADCRUMB_SETUP_DHCP            0xF8      ///< Watchdog timeout in DHCP
+#define WD_BREADCRUMB_SETUP_LINK_WAIT       0xF9      ///< Watchdog timeout waiting for ethernet link
+#define WD_BREADCRUMB_UNKNOWN               0xFF      ///< Watchdog timeout in unknown location
 /** @} */
 
 //==================================================================================================

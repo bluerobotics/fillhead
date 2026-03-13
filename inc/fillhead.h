@@ -13,6 +13,7 @@
 #pragma once
 
 #include "config.h"
+#include "responses.h"
 #include "comms_controller.h"
 #include "injector_controller.h"
 #include "pinch_valve_controller.h"
@@ -109,6 +110,13 @@ private:
      */
     void updateState();
 
+    /**
+     * @brief Performs safety checks and, when enabled, participates in watchdog feeding.
+     * @details Currently a placeholder for future safety logic. Mirrors the role of
+     *          Pressboi's performSafetyCheck() so watchdog integration remains similar.
+     */
+    void performSafetyCheck();
+
 	/**
 	 * @brief Master command handler; dispatches incoming commands to the correct sub-system.
 	 * @details This function acts as a switchboard. It takes a message from the
@@ -152,6 +160,25 @@ private:
      * @brief Resets all sub-controllers to their idle states and sets the main state to STANDBY.
      */
     void standby();
+
+#if WATCHDOG_ENABLED
+    /**
+     * @brief Checks for watchdog recovery after motor setup.
+     * @details Detects if the system recovered from a watchdog timeout and moves to a safe state.
+     */
+    void handleWatchdogRecovery();
+
+    /**
+     * @brief Initializes the watchdog timer with early warning interrupt.
+     */
+    void initializeWatchdog();
+
+    /**
+     * @brief Feeds (clears/resets) the watchdog timer.
+     * @details This must be called regularly from the main loop to prevent watchdog reset.
+     */
+    void feedWatchdog();
+#endif
 
     // --- Component Ownership ---
     CommsController  m_comms;           ///< Manages all network and serial communication.

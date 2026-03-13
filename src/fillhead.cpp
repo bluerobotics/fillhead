@@ -14,8 +14,22 @@
 // --- Includes ---
 //==================================================================================================
 #include "fillhead.h"
+#include "config.h"
+#include "error_log.h"
 #include <cstring> // For C-style string functions like strchr, strstr
 #include <cstdlib> // For C-style functions like atoi
+#include <sam.h>   // For watchdog timer (WDT) register access
+
+//==================================================================================================
+// --- Global Watchdog State (Survives Reset) ---
+//==================================================================================================
+#if WATCHDOG_ENABLED
+// Place in .noinit section so it survives reset but is cleared on power-up.
+__attribute__((section(".noinit"))) volatile uint32_t g_watchdogRecoveryFlag;
+__attribute__((section(".noinit"))) volatile uint32_t g_watchdogBreadcrumb;
+// Captured at boot time for accurate reporting (breadcrumb changes during normal operation).
+static uint32_t g_crashTimeBreadcrumb = 0;
+#endif
 
 //==================================================================================================
 // --- Fillhead Class Implementation ---
@@ -57,15 +71,52 @@ Fillhead::Fillhead() :
  * setup() method for each component in the correct order.
  */
 void Fillhead::setup() {
+#if WATCHDOG_ENABLED
+    // Capture crash-time breadcrumb from previous boot BEFORE overwriting it.
+    g_crashTimeBreadcrumb = g_watchdogBreadcrumb;
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP;
+#endif
+
     // Configure all motors for step and direction control mode.
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_MOTOR_MODE;
+#endif
     MotorMgr.MotorModeSet(MotorManager::MOTOR_ALL, Connector::CPM_MODE_STEP_AND_DIR);
 
+    // Log firmware startup.
+    g_errorLog.log(LOG_INFO, "=== FIRMWARE STARTUP ===");
+
+    // Initialize comms first (can take time for network setup).
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_COMMS;
+#endif
     m_comms.setup();
+
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_MOTOR;
+#endif
     m_injector.setup();
     m_injectorValve.setup();
     m_vacuumValve.setup();
+
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_FORCE;
+#endif
     m_heater.setup();
     m_vacuum.setup();
+
+#if WATCHDOG_ENABLED
+    // Initialize watchdog AFTER comms setup to avoid timeout during network initialization.
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_WD_RECOVERY;
+    handleWatchdogRecovery();
+
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_WD_INIT;
+    initializeWatchdog();
+
+    // Feed watchdog immediately after enabling to give maximum time for startup messages.
+    feedWatchdog();
+#endif
+
     m_comms.reportEvent(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
 }
 
@@ -79,30 +130,64 @@ void Fillhead::setup() {
  * 4. Manages periodic tasks like sensor polling and telemetry transmission.
  */
 void Fillhead::loop() {
-    // 1. Process all incoming/outgoing communication queues.
+    // 1. Perform safety checks (including watchdog feed when enabled).
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_SAFETY_CHECK;
+#endif
+    performSafetyCheck();
+
+    // 2. Process all incoming/outgoing communication queues.
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_COMMS_UPDATE;
+#endif
     m_comms.update();
 
-    // 2. Check for and handle one new command from the receive queue.
+    // 3. Check for and handle one new command from the receive queue.
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_RX_DEQUEUE;
+#endif
     Message msg;
     if (m_comms.dequeueRx(msg)) {
         dispatchCommand(msg);
     }
 
-    // 3. Update the main state machine and all sub-controllers.
+    // 4. Update the main state machine and all sub-controllers.
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_UPDATE_STATE;
+#endif
     updateState();
 
-    // 4. Handle time-based periodic tasks.
+    // 5. Handle time-based periodic tasks.
     uint32_t now = Milliseconds();
     if (now - m_lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
         m_lastSensorSampleTime = now;
+#if WATCHDOG_ENABLED
+        g_watchdogBreadcrumb = WD_BREADCRUMB_FORCE_UPDATE;
+#endif
         m_heater.updateTemperature();
         m_vacuum.updateVacuum();
     }
 	
-    if (m_comms.isGuiDiscovered() && (now - m_lastTelemetryTime >= TELEMETRY_INTERVAL_MS)) {
+    // Always publish telemetry on schedule, even if GUI has not yet been
+    // discovered on the network. This ensures continuous USB telemetry,
+    // which the control app relies on to detect a healthy connection.
+    if (now - m_lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
+#if WATCHDOG_ENABLED
+        g_watchdogBreadcrumb = WD_BREADCRUMB_TELEMETRY;
+#endif
         m_lastTelemetryTime = now;
         publishTelemetry();
     }
+
+#if WATCHDOG_ENABLED
+    // Feed the watchdog at the end of the loop after all work is done.
+    feedWatchdog();
+#endif
+}
+
+void Fillhead::performSafetyCheck() {
+    // Placeholder for future safety logic; mirrors Pressboi structure so that
+    // watchdog integration remains consistent between projects.
 }
 
 // --- Private Methods: State, Command, and Telemetry Handling ---
@@ -207,12 +292,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
         // --- System-Level Commands (Handled by Fillhead) ---
         case CMD_DISCOVER_DEVICE: {
             char* portStr = strstr(msg.buffer, "PORT=");
-            if (portStr) {
-                m_comms.setGuiIp(msg.remoteIp);
-                m_comms.setGuiPort(atoi(portStr + 5));
-                m_comms.setGuiDiscovered(true);
-                m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "DEVICE_ID=fillhead");
-            }
+            m_comms.setGuiIp(msg.remoteIp);
+            m_comms.setGuiPort(portStr ? (uint16_t)atoi(portStr + 5) : msg.remotePort);
+            m_comms.setGuiDiscovered(true);
+            m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "DEVICE_ID=fillhead");
             break;
         }
         case CMD_ENABLE:        enable(); break;
@@ -287,11 +370,13 @@ void Fillhead::dispatchCommand(const Message& msg) {
 }
 
 /**
- * @brief Aggregates telemetry data from all sub-controllers and sends it as a single UDP packet.
+ * @brief Aggregates telemetry data from all sub-controllers and sends it as a single
+ *        message via the communications controller.
+ *
+ * @details The CommsController will route this to the discovered GUI over UDP when
+ *          available, and will also mirror it to USB whenever a USB host is connected.
  */
 void Fillhead::publishTelemetry() {
-    if (!m_comms.isGuiDiscovered()) return;
-
     char telemetryBuffer[1024];
     const char* mainStateStr;
     switch(m_mainState) {
@@ -301,6 +386,7 @@ void Fillhead::publishTelemetry() {
         case STATE_DISABLED: mainStateStr = "DISABLED"; break;
         default:             mainStateStr = "UNKNOWN"; break;
     }
+    (void)mainStateStr;  // reserved for future use in telemetry
 
     // Assemble the full telemetry string from all components.
     snprintf(telemetryBuffer, sizeof(telemetryBuffer),
@@ -329,6 +415,84 @@ void Fillhead::publishTelemetry() {
     // Enqueue the message for sending.
     m_comms.enqueueTx(telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
 }
+
+#if WATCHDOG_ENABLED
+/**
+ * @brief Handle recovery from a previous watchdog reset.
+ */
+void Fillhead::handleWatchdogRecovery() {
+    if (g_watchdogRecoveryFlag == WATCHDOG_RECOVERY_FLAG) {
+        // Clear the flag so we don't treat subsequent resets as watchdog recoveries.
+        g_watchdogRecoveryFlag = 0;
+        m_mainState = STATE_ERROR;
+        g_errorLog.log(LOG_ERROR, "Recovered from watchdog reset");
+    }
+}
+
+/**
+ * @brief Initialize the hardware watchdog timer.
+ */
+void Fillhead::initializeWatchdog() {
+    // Enable the digital interface clock for the watchdog.
+    MCLK->APBAMASK.reg |= MCLK_APBAMASK_WDT;
+
+    // Configure watchdog: early warning interrupt and reset after timeout.
+    WDT->CONFIG.reg = WDT_CONFIG_PER(WDT_CONFIG_PER_CYC2048);
+    WDT->EWCTRL.reg = WDT_EWCTRL_EWOFFSET(WDT_EWCTRL_EWOFFSET_CYC2048);
+
+    // Clear and enable interrupt.
+    WDT->INTENSET.reg = WDT_INTENSET_EW;
+    NVIC_EnableIRQ(WDT_IRQn);
+
+    // Enable watchdog.
+    WDT->CTRLA.reg = WDT_CTRLA_ENABLE;
+    while (WDT->SYNCBUSY.reg) {
+        // Wait for synchronization
+    }
+
+    g_errorLog.log(LOG_INFO, "Watchdog initialized");
+}
+
+/**
+ * @brief Feed (reset) the watchdog timer.
+ */
+void Fillhead::feedWatchdog() {
+    // Clear watchdog counter.
+    WDT->CLEAR.reg = WDT_CLEAR_CLEAR_KEY;
+    while (WDT->SYNCBUSY.reg) {
+        // Wait for synchronization
+    }
+}
+
+/**
+ * @brief Watchdog early-warning interrupt handler for Fillhead.
+ */
+extern "C" void WDT_Handler(void) {
+    // Clear the early warning interrupt flag.
+    WDT->INTFLAG.reg = WDT_INTFLAG_EW;
+
+    // Immediately disable all motors to prevent damage.
+    MOTOR_INJECTOR_A.EnableRequest(false);
+    MOTOR_INJECTOR_B.EnableRequest(false);
+    MOTOR_VACUUM_VALVE.EnableRequest(false);
+    MOTOR_INJECTION_VALVE.EnableRequest(false);
+
+    // Indicate watchdog trigger on the ClearCore status LED.
+    ConnectorLed.Mode(Connector::OUTPUT_DIGITAL);
+    ConnectorLed.State(true);
+
+    // Set recovery flag in .noinit memory (survives reset).
+    g_watchdogRecoveryFlag = WATCHDOG_RECOVERY_FLAG;
+
+    // Brief LED blink pattern to indicate watchdog event.
+    for (int i = 0; i < 5; i++) {
+        ConnectorLed.State(true);
+        for (volatile int d = 0; d < 5000; d++);
+        ConnectorLed.State(false);
+        for (volatile int d = 0; d < 5000; d++);
+    }
+}
+#endif
 
 /**
  * @brief Enables all motors and places the system in a ready state.

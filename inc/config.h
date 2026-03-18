@@ -44,7 +44,7 @@
  * @{
  */
 #define STATUS_MESSAGE_BUFFER_SIZE      256       ///< Standard buffer size for composing status and error messages.
-#define FIRMWARE_VERSION                "0.1.0"
+#define FIRMWARE_VERSION                "0.2.0"
 /** @} */
 
 //==================================================================================================
@@ -138,6 +138,7 @@
 
 // --- Analog Sensors ---
 #define PIN_THERMOCOUPLE                ConnectorA12 ///< Analog input for the heater thermocouple.
+// Sensor PN: XP5-080-01
 #define PIN_VACUUM_TRANSDUCER           ConnectorA11 ///< Analog input for the vacuum pressure transducer.
 
 // --- Digital Outputs (Relays) ---
@@ -145,10 +146,18 @@
 #define PIN_VACUUM_RELAY                ConnectorIO0 ///< Digital output to control the vacuum pump relay.
 #define PIN_VACUUM_VALVE_RELAY          ConnectorIO5 ///< Digital output to control the vacuum solenoid valve relay.
 
+// --- Safety Inputs ---
+#define PIN_LIGHT_CURTAIN               ConnectorIO4 ///< Digital input for the light curtain safety sensor on IO4.
+#define LIGHT_CURTAIN_ACTIVE_STATE      false        ///< Pin state when beam is broken (false = active LOW, typical NPN normally-closed).
+#define LIGHT_CURTAIN_FILTER_MS         2            ///< Debounce filter length in milliseconds for the light curtain input.
+#define LIGHT_CURTAIN_ENABLED           true         ///< Enable/disable light curtain safety check. Set false if sensor is not installed.
+
 // --- Home Sensors (Hall Effect) ---
 // Sensor PN: 326161-0053
 #define HOME_SENSOR_M0                  ConnectorDI7 ///< Motor A (M0) home sensor on DI7.
 #define HOME_SENSOR_M1                  ConnectorDI6 ///< Motor B (M1) home sensor on DI6.
+#define HOME_SENSOR_M2                  ConnectorDI8 ///< Vacuum pinch valve (M2) home sensor on DI8.
+#define HOME_SENSOR_M3                  ConnectorA9  ///< Injection pinch valve (M3) home sensor on A9.
 #define HOME_SENSOR_ACTIVE_STATE        true         ///< true = sensor outputs HIGH when triggered (active high).
 #define HOME_SENSOR_FILTER_MS           2            ///< Debounce filter length in milliseconds for home sensors.
 /** @} */
@@ -183,10 +192,10 @@
  * @name Vacuum System Defaults
  * @{
  */
-#define VAC_V_OUT_MIN                   1.0f      ///< Sensor output voltage at minimum pressure (-14.7 PSIG).
-#define VAC_V_OUT_MAX                   5.0f      ///< Sensor output voltage at maximum pressure (15.0 PSIG).
-#define VAC_PRESSURE_MIN                -14.7f    ///< Minimum pressure in PSIG that the sensor can read.
-#define VAC_PRESSURE_MAX                15.0f     ///< Maximum pressure in PSIG that the sensor can read.
+#define VAC_V_OUT_MIN                   1.0f      ///< Sensor output voltage at minimum pressure (-14.65 PSIG).
+#define VAC_V_OUT_MAX                   5.0f      ///< Sensor output voltage at maximum pressure (14.50 PSIG).
+#define VAC_PRESSURE_MIN                -14.65f   ///< Minimum pressure in PSIG (-101 kPa).
+#define VAC_PRESSURE_MAX                14.50f    ///< Maximum pressure in PSIG (100 kPa).
 #define VACUUM_PSIG_OFFSET              0.0f      ///< A calibration offset to be added to the raw vacuum sensor reading.
 #define DEFAULT_VACUUM_TARGET_PSIG      -14.0f    ///< Default target pressure in PSIG for vacuum operations.
 #define DEFAULT_VACUUM_RAMP_TIMEOUT_MS  30000     ///< Default time (in ms) allowed to reach the target pressure before a timeout error.
@@ -274,29 +283,20 @@
 /** @} */
 
 /**
- * @name Pinch Valve Homing (Untubed)
+ * @name Pinch Valve Homing (Hall Sensor)
+ * @details Pinch valves home toward the OPEN end of their stroke where a hall effect
+ * sensor is mounted. The valve moves in the negative (open) direction to find the
+ * sensor, backs off, then re-approaches slowly for precision.
  * @{
  */
-#define PINCH_HOMING_UNTUBED_STROKE_MM              50.0f  ///< Max travel (mm) for untubed homing.
-#define PINCH_HOMING_UNTUBED_UNIFIED_VEL_MMS        1.0f   ///< Unified velocity (mm/s) for all moves during untubed homing.
-#define PINCH_HOMING_UNTUBED_ACCEL_MMSS             100.0f ///< Acceleration (mm/s^2) for untubed homing.
-#define PINCH_HOMING_UNTUBED_SEARCH_TORQUE_PERCENT  15.0f  ///< Torque limit (%) for detecting the hard stop without tubing.
-#define PINCH_HOMING_UNTUBED_BACKOFF_TORQUE_PERCENT 50.0f  ///< Higher torque (%) for the back-off move.
-#define PINCH_VALVE_UNTUBED_FINAL_OFFSET_MM         9.0f   ///< Final offset distance (mm) from the hard stop, defining the "open" position.
-#define PINCH_VALVE_HOMING_BACKOFF_MM_UNTUBED 0.5f         ///< Back-off distance (mm) for untubed homing.
-/** @} */
+#define PINCH_HOMING_STROKE_MM                  50.0f  ///< Max travel (mm) during rapid search toward the home sensor.
+#define PINCH_HOMING_RAPID_VEL_MMS              5.0f   ///< Velocity (mm/s) for the initial rapid search toward the sensor.
+#define PINCH_HOMING_SLOW_VEL_MMS               1.0f   ///< Velocity (mm/s) for the slow precision approach after backoff.
+#define PINCH_HOMING_ACCEL_MMSS                 100.0f ///< Acceleration (mm/s^2) for all homing moves.
+#define PINCH_HOMING_BACKOFF_MM                 2.0f   ///< Distance (mm) to back off from the sensor before the slow approach.
 
-/**
- * @name Pinch Valve Homing (Tubed)
- * @{
- */
-#define PINCH_HOMING_TUBED_STROKE_MM              50.0f  ///< Max travel (mm) for tubed homing.
-#define PINCH_HOMING_TUBED_UNIFIED_VEL_MMS        1.0f   ///< Unified velocity (mm/s) for all moves during tubed homing.
-#define PINCH_HOMING_TUBED_ACCEL_MMSS             100.0f ///< Acceleration (mm/s^2) for tubed homing.
-#define PINCH_HOMING_TUBED_SEARCH_TORQUE_PERCENT  60.0f  ///< Higher torque limit (%) needed to fully pinch the tube.
-#define PINCH_HOMING_TUBED_BACKOFF_TORQUE_PERCENT 80.0f  ///< Higher torque (%) for the back-off move.
-#define PINCH_VALVE_TUBED_FINAL_OFFSET_MM         6.0f   ///< Final offset distance (mm) from the hard stop, defining the "open" position with tubing.
-#define PINCH_VALVE_HOMING_BACKOFF_MM_TUBED 0.5f         ///< Back-off distance (mm) for tubed homing.
+#define NVM_SLOT_INJ_VALVE_HOME_ON_BOOT         (16 * 4) ///< NVM byte offset for injection valve home-on-boot flag.
+#define NVM_SLOT_VAC_VALVE_HOME_ON_BOOT         (17 * 4) ///< NVM byte offset for vacuum valve home-on-boot flag.
 /** @} */
 
 /**

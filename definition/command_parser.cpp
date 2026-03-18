@@ -28,15 +28,13 @@ Command parseCommand(const char* cmdStr) {
     if (strncmp(cmdStr, CMD_STR_HOME_ON_BOOT, strlen(CMD_STR_HOME_ON_BOOT)) == 0) return CMD_HOME_ON_BOOT;
 
     // Fillhead injection commands (longer prefixes first)
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_HOME_UNTUBED, strlen(CMD_STR_INJECTION_VALVE_HOME_UNTUBED)) == 0) return CMD_INJECTION_VALVE_HOME_UNTUBED;
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_HOME_TUBED, strlen(CMD_STR_INJECTION_VALVE_HOME_TUBED)) == 0) return CMD_INJECTION_VALVE_HOME_TUBED;
+    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_HOME_ON_BOOT, strlen(CMD_STR_INJECTION_VALVE_HOME_ON_BOOT)) == 0) return CMD_INJECTION_VALVE_HOME_ON_BOOT;
     if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_HOME, strlen(CMD_STR_INJECTION_VALVE_HOME)) == 0) return CMD_INJECTION_VALVE_HOME;
     if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_OPEN, strlen(CMD_STR_INJECTION_VALVE_OPEN)) == 0) return CMD_INJECTION_VALVE_OPEN;
     if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_CLOSE, strlen(CMD_STR_INJECTION_VALVE_CLOSE)) == 0) return CMD_INJECTION_VALVE_CLOSE;
     if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_JOG, strlen(CMD_STR_INJECTION_VALVE_JOG)) == 0) return CMD_INJECTION_VALVE_JOG;
 
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_HOME_UNTUBED, strlen(CMD_STR_VACUUM_VALVE_HOME_UNTUBED)) == 0) return CMD_VACUUM_VALVE_HOME_UNTUBED;
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_HOME_TUBED, strlen(CMD_STR_VACUUM_VALVE_HOME_TUBED)) == 0) return CMD_VACUUM_VALVE_HOME_TUBED;
+    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_HOME_ON_BOOT, strlen(CMD_STR_VACUUM_VALVE_HOME_ON_BOOT)) == 0) return CMD_VACUUM_VALVE_HOME_ON_BOOT;
     if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_HOME, strlen(CMD_STR_VACUUM_VALVE_HOME)) == 0) return CMD_VACUUM_VALVE_HOME;
     if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_OPEN, strlen(CMD_STR_VACUUM_VALVE_OPEN)) == 0) return CMD_VACUUM_VALVE_OPEN;
     if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_CLOSE, strlen(CMD_STR_VACUUM_VALVE_CLOSE)) == 0) return CMD_VACUUM_VALVE_CLOSE;
@@ -107,6 +105,8 @@ const char* getCommandParams(const char* cmdStr, Command cmd) {
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: return cmdStr + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT);
         case CMD_INJECTION_VALVE_JOG: return cmdStr + strlen(CMD_STR_INJECTION_VALVE_JOG);
         case CMD_VACUUM_VALVE_JOG:    return cmdStr + strlen(CMD_STR_VACUUM_VALVE_JOG);
+        case CMD_INJECTION_VALVE_HOME_ON_BOOT: return cmdStr + strlen(CMD_STR_INJECTION_VALVE_HOME_ON_BOOT);
+        case CMD_VACUUM_VALVE_HOME_ON_BOOT:    return cmdStr + strlen(CMD_STR_VACUUM_VALVE_HOME_ON_BOOT);
         case CMD_SET_HEATER_GAINS:    return cmdStr + strlen(CMD_STR_SET_HEATER_GAINS);
         case CMD_SET_HEATER_SETPOINT: return cmdStr + strlen(CMD_STR_SET_HEATER_SETPOINT);
         case CMD_SET_VACUUM_TARGET:   return cmdStr + strlen(CMD_STR_SET_VACUUM_TARGET);

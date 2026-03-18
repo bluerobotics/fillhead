@@ -1,0 +1,133 @@
+{
+    "name": "Press Report",
+    "description": "Generates a detailed press operation report with force/distance analysis",
+    "version": "1.0.0",
+    
+    "required_logged_variables": [
+        {
+            "variable": "fillhead.current_pos",
+            "description": "Position data for X-axis of force curve",
+            "unit": "mm"
+        },
+        {
+            "variable": "fillhead.force_load_cell",
+            "description": "Force data from load cell sensor",
+            "unit": "kg",
+            "alternatives": ["fillhead.force_motor_torque"]
+        }
+    ],
+    
+    "optional_logged_variables": [
+        {
+            "variable": "fillhead.joules",
+            "description": "Energy expended during press operation",
+            "unit": "J"
+        },
+        {
+            "variable": "fillhead.force_limit",
+            "description": "Force limit setting during operation",
+            "unit": "kg"
+        },
+        {
+            "variable": "fillhead.endpoint",
+            "description": "Final position where press operation ended",
+            "unit": "mm"
+        },
+        {
+            "variable": "fillhead.target_pos",
+            "description": "Target position for press operation",
+            "unit": "mm"
+        }
+    ],
+    
+    "parameters": [
+        {
+            "parameter": "log_file",
+            "type": "string",
+            "description": "Path to the CSV log file to analyze (uses most recent if not specified)",
+            "optional": true
+        },
+        {
+            "parameter": "force_min",
+            "type": "float",
+            "unit": "kg",
+            "description": "Minimum acceptable force threshold for PASS",
+            "optional": true,
+            "default": null
+        },
+        {
+            "parameter": "force_max",
+            "type": "float",
+            "unit": "kg",
+            "description": "Maximum acceptable force threshold for PASS",
+            "optional": true,
+            "default": null
+        },
+        {
+            "parameter": "endpoint_min",
+            "type": "float",
+            "unit": "mm",
+            "description": "Minimum acceptable endpoint position for PASS",
+            "optional": true,
+            "default": null
+        },
+        {
+            "parameter": "endpoint_max",
+            "type": "float",
+            "unit": "mm",
+            "description": "Maximum acceptable endpoint position for PASS",
+            "optional": true,
+            "default": null
+        },
+        {
+            "parameter": "energy_min",
+            "type": "float",
+            "unit": "J",
+            "description": "Minimum acceptable energy for PASS",
+            "optional": true,
+            "default": null
+        },
+        {
+            "parameter": "energy_max",
+            "type": "float",
+            "unit": "J",
+            "description": "Maximum acceptable energy for PASS",
+            "optional": true,
+            "default": null
+        },
+        {
+            "parameter": "title",
+            "type": "string",
+            "description": "Custom title for the report",
+            "optional": true,
+            "default": "Press Operation Report"
+        }
+    ],
+    
+    "output": {
+        "format": "html",
+        "filename_template": "press_report_<serial>_<date>_<time>.html",
+        "supports_tags": ["<serial>", "<date>", "<time>", "<job>", "<op>"]
+    },
+    
+    "telemetry_params": [
+        {
+            "telemetry_key": "startpoint",
+            "handler_param": "press_startpoint",
+            "type": "float",
+            "description": "Position where press threshold was crossed"
+        },
+        {
+            "telemetry_key": "press_threshold",
+            "handler_param": "press_threshold",
+            "type": "float",
+            "description": "Force threshold for press detection"
+        }
+    ],
+    
+    "validation_rules": {
+        "must_follow": "stop_logging",
+        "description": "generate_press_report must be called after stop_logging to ensure log data is complete"
+    }
+}
+

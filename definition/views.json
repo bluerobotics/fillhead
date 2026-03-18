@@ -1,4 +1,32 @@
 {
+  "press_operator_view": {
+    "name": "press operator view",
+    "description": "Simplified press operation interface with large force and position displays",
+    "icon": "",
+    "components": [
+      {
+        "type": "large_display",
+        "label": "FORCE",
+        "variable": "fillhead.force",
+        "unit": "kg",
+        "color_ranges": [
+          {"max": 100, "color": "default"},
+          {"max": 500, "color": "green"},
+          {"max": 800, "color": "yellow"},
+          {"min": 800, "color": "red"}
+        ]
+      },
+      {
+        "type": "position_display",
+        "current": "fillhead.current_pos",
+        "target": "fillhead.target_pos"
+      },
+      {
+        "type": "state_display",
+        "variable": "fillhead.main_state"
+      }
+    ]
+  },
   "fill_operator_view": {
     "name": "fill operator view",
     "description": "Simplified fill operation interface with large volume and valve state displays",

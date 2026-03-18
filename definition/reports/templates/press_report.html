@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - {{ serial_number }} - {{ date }}</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0b;
+            --bg-secondary: #111113;
+            --bg-card: #18181b;
+            --bg-card-hover: #1f1f23;
+            --border-color: #27272a;
+            --border-accent: #3f3f46;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --accent-blue: #3b82f6;
+            --accent-blue-glow: rgba(59, 130, 246, 0.3);
+            --accent-cyan: #22d3ee;
+            --accent-purple: #a855f7;
+            --success-green: #22c55e;
+            --success-green-glow: rgba(34, 197, 94, 0.4);
+            --success-green-bg: rgba(34, 197, 94, 0.1);
+            --error-red: #ef4444;
+            --error-red-glow: rgba(239, 68, 68, 0.4);
+            --error-red-bg: rgba(239, 68, 68, 0.1);
+            --warning-yellow: #eab308;
+            --warning-yellow-glow: rgba(234, 179, 8, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Header Section */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header-left {
+            flex: 1;
+        }
+
+        .report-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .report-subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .id-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .id-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+            border: 1px solid var(--border-accent);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+        }
+
+        .id-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .id-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+
+        .id-badge.serial .id-value {
+            font-size: 1.1rem;
+        }
+
+        /* Compact info bar */
+        .info-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .info-bar-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .info-bar-label {
+            color: var(--text-muted);
+        }
+
+        .info-bar-value {
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Pass/Fail Badge */
+        .result-badge {
+            text-align: center;
+            padding: 1.5rem 3rem;
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .result-badge.pass {
+            background: linear-gradient(135deg, var(--success-green-bg) 0%, transparent 100%);
+            border: 2px solid var(--success-green);
+            box-shadow: 0 0 40px var(--success-green-glow), inset 0 0 40px var(--success-green-glow);
+        }
+
+        .result-badge.fail {
+            background: linear-gradient(135deg, var(--error-red-bg) 0%, transparent 100%);
+            border: 2px solid var(--error-red);
+            box-shadow: 0 0 40px var(--error-red-glow), inset 0 0 40px var(--error-red-glow);
+        }
+
+        .result-badge.pending {
+            background: linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, transparent 100%);
+            border: 2px solid var(--warning-yellow);
+            box-shadow: 0 0 40px var(--warning-yellow-glow), inset 0 0 40px var(--warning-yellow-glow);
+        }
+
+        .result-text {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        .result-badge.pass .result-text {
+            color: var(--success-green);
+            text-shadow: 0 0 20px var(--success-green-glow);
+        }
+
+        .result-badge.fail .result-text {
+            color: var(--error-red);
+            text-shadow: 0 0 20px var(--error-red-glow);
+        }
+
+        .result-badge.pending .result-text {
+            color: var(--warning-yellow);
+            text-shadow: 0 0 20px var(--warning-yellow-glow);
+        }
+
+        .result-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        /* Info Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .info-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            transition: all 0.2s ease;
+        }
+
+        .info-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-accent);
+        }
+
+        .info-card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .info-card-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .info-card-icon.device { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); }
+        .info-card-icon.time { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
+        .info-card-icon.app { background: rgba(34, 211, 238, 0.15); color: var(--accent-cyan); }
+
+        .info-card-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .info-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Metrics Section */
+        .metrics-section {
+            margin-bottom: 2rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(180deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+            border-radius: 2px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+        }
+
+        .metric-card.pass::before {
+            background: var(--success-green);
+        }
+
+        .metric-card.fail::before {
+            background: var(--error-red);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .metric-unit {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            margin-left: 0.25rem;
+        }
+
+        .metric-threshold {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .metric-status {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            font-size: 1.25rem;
+        }
+
+        .metric-status.pass { color: var(--success-green); }
+        .metric-status.fail { color: var(--error-red); }
+
+        /* Chart Section */
+        .chart-section {
+            margin-bottom: 2rem;
+        }
+
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .chart-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.force { background: var(--accent-cyan); }
+        .legend-dot.threshold { background: var(--error-red); }
+        .legend-dot.press-threshold { 
+            background: var(--accent-cyan); 
+            border: 2px dotted var(--accent-cyan);
+            background: transparent;
+        }
+        .legend-dot.energy { background: rgba(168, 85, 247, 0.5); }
+        .legend-dot.polyfit { background: #f59e0b; }
+
+        .legend-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        
+        .legend-toggle:hover {
+            background: var(--bg-card-hover);
+        }
+        
+        .legend-toggle.active {
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+        }
+        
+        .legend-toggle .toggle-icon {
+            font-size: 0.7rem;
+            opacity: 0.5;
+        }
+        
+        .legend-toggle.active .toggle-icon {
+            opacity: 1;
+        }
+
+        /* Polynomial Coefficients Collapsible Display */
+        .poly-coefficients {
+            margin-top: 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .poly-coefficients summary {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .poly-coefficients summary:hover {
+            color: var(--text-primary);
+        }
+        
+        .poly-coefficients summary::marker {
+            color: var(--accent-cyan);
+        }
+        
+        .poly-coefficients summary .summary-icon {
+            transition: transform 0.2s ease;
+        }
+        
+        .poly-coefficients[open] summary .summary-icon {
+            transform: rotate(90deg);
+        }
+        
+        .poly-coefficients .coeff-content {
+            padding: 0 1rem 1rem 1rem;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .poly-coefficients .coeff-equation {
+            font-size: 1rem;
+            color: var(--accent-cyan);
+            margin: 0.75rem 0;
+            padding: 0.5rem;
+            background: rgba(34, 211, 238, 0.1);
+            border-radius: 4px;
+        }
+        
+        .poly-coefficients .coeff-values {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+        
+        .poly-coefficients .coeff-label {
+            color: var(--text-secondary);
+            margin-right: 0.5rem;
+        }
+        
+        .poly-coefficients .command-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .poly-coefficients code {
+            display: inline-block;
+            padding: 0.5rem;
+            background: var(--bg-card);
+            border-radius: 4px;
+            color: #f59e0b;
+            font-size: 0.75rem;
+            word-break: break-all;
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .poly-coefficients .copy-btn {
+            padding: 0.4rem 0.75rem;
+            background: var(--bg-card-hover);
+            border: 1px solid var(--border-accent);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        
+        .poly-coefficients .copy-btn:hover {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        #force-chart {
+            width: 100%;
+            height: 450px;
+        }
+
+        /* Energy Visualization */
+        .energy-viz {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* Chart with sidebar layout */
+        .chart-with-sidebar {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .chart-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Vertical Energy Bar Sidebar */
+        .energy-sidebar {
+            width: 145px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0.75rem 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            min-height: 320px;
+        }
+        
+        .energy-value-row {
+            display: flex;
+            align-items: baseline;
+            gap: 0.35rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .energy-value-row .energy-sidebar-status {
+            margin: 0;
+            font-size: 1rem;
+            line-height: 1;
+        }
+        
+        .energy-sidebar-value.fail {
+            color: var(--error-red);
+        }
+
+        .energy-sidebar-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .energy-sidebar-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            margin-bottom: 0.75rem;
+        }
+
+        .energy-bar-vertical-container {
+            position: relative;
+            width: 40px;
+            height: 100%;
+            min-height: 220px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            overflow: visible;
+            margin: 0 auto;
+        }
+        
+        .energy-bar-wrapper {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: stretch;
+            padding: 0.25rem 55px;
+            flex: 1;
+            min-height: 240px;
+        }
+
+        .energy-bar-vertical {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(0deg, var(--accent-purple) 0%, var(--accent-blue) 100%);
+            border-radius: 12px;
+            transition: height 0.5s ease;
+        }
+
+        .energy-bar-vertical::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+        }
+
+        .energy-threshold-marker {
+            position: absolute;
+            left: -15px;
+            right: -15px;
+            height: 0;
+            border-top: 2px dashed var(--error-red);
+            z-index: 10;
+        }
+        
+        .energy-threshold-marker.min {
+            border-top-color: var(--error-red);
+        }
+        
+        .energy-threshold-marker.max {
+            border-top-color: var(--error-red);
+        }
+        
+        .energy-threshold-label {
+            position: absolute;
+            right: calc(100% + 8px);
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.6rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .energy-sidebar-status {
+            margin-top: 0.75rem;
+            font-size: 1.25rem;
+        }
+
+        .energy-sidebar-status.pass { color: var(--success-green); }
+        .energy-sidebar-status.fail { color: var(--error-red); }
+
+        .energy-markers {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Download Button */
+        .download-section {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .download-button {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.875rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .download-button:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--accent-blue);
+            color: var(--accent-cyan);
+        }
+
+        .download-icon {
+            font-size: 1.25rem;
+            color: var(--text-primary);
+        }
+
+        .data-table tr:hover td {
+            background: var(--bg-card-hover);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .footer-logo {
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background: white;
+                color: black;
+            }
+
+            .container {
+                max-width: 100%;
+                padding: 1rem;
+            }
+
+            .info-card, .metric-card, .chart-container {
+                break-inside: avoid;
+            }
+
+            .download-section {
+                display: none;
+            }
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .result-badge {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .metric-card, .info-card {
+            animation: slideIn 0.5s ease forwards;
+        }
+
+        .metric-card:nth-child(1) { animation-delay: 0.1s; }
+        .metric-card:nth-child(2) { animation-delay: 0.2s; }
+        .metric-card:nth-child(3) { animation-delay: 0.3s; }
+        .metric-card:nth-child(4) { animation-delay: 0.4s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="report-title">{{ title }}</h1>
+                <div class="id-badges">
+                    <div class="id-badge serial">
+                        <span class="id-label">Serial</span>
+                        <span class="id-value">{{ serial_number }}</span>
+                    </div>
+                    <div class="id-badge">
+                        <span class="id-label">Job</span>
+                        <span class="id-value">{{ job_number }}</span>
+                    </div>
+                    <div class="id-badge">
+                        <span class="id-label">Op</span>
+                        <span class="id-value">{{ op_number }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="result-badge {{ 'pass' if overall_pass else ('fail' if overall_pass == False else 'pending') }}">
+                <div class="result-text">{{ 'PASS' if overall_pass else ('FAIL' if overall_pass == False else 'N/A') }}</div>
+                <div class="result-subtitle">{{ pass_fail_reason }}</div>
+            </div>
+        </header>
+
+        <!-- Compact Info Bar -->
+        <div class="info-bar">
+            <div class="info-bar-item">
+                <span class="info-bar-label">Device:</span>
+                <span class="info-bar-value">{{ device_name }}</span>
+            </div>
+            <div class="info-bar-item">
+                <span class="info-bar-label">Firmware:</span>
+                <span class="info-bar-value">{{ firmware_version }}</span>
+            </div>
+            <div class="info-bar-item">
+                <span class="info-bar-label">Force Mode:</span>
+                <span class="info-bar-value">{{ force_mode }}</span>
+            </div>
+            <div class="info-bar-item">
+                <span class="info-bar-label">Date:</span>
+                <span class="info-bar-value">{{ date }}</span>
+            </div>
+            <div class="info-bar-item">
+                <span class="info-bar-label">Time:</span>
+                <span class="info-bar-value">{{ time }}</span>
+            </div>
+            <div class="info-bar-item">
+                <span class="info-bar-label">Duration:</span>
+                <span class="info-bar-value">{{ duration }}</span>
+            </div>
+        </div>
+
+        <!-- Metrics Section -->
+        <section class="metrics-section">
+            <div class="metrics-grid">
+                <div class="metric-card {{ 'pass' if peak_force_pass else ('fail' if peak_force_pass == False else '') }}">
+                    <span class="metric-label">Peak Force</span>
+                    <div class="metric-value">{{ "%.2f"|format(peak_force) }}<span class="metric-unit">kg</span></div>
+                    {% if force_min is not none or force_max is not none %}
+                    <div class="metric-threshold">
+                        {% if force_min is not none and force_max is not none %}
+                        Threshold: {{ force_min }} - {{ force_max }} kg
+                        {% elif force_min is not none %}
+                        Min: {{ force_min }} kg
+                        {% elif force_max is not none %}
+                        Max: {{ force_max }} kg
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if peak_force_pass is not none %}
+                    <span class="metric-status {{ 'pass' if peak_force_pass else 'fail' }}">{{ '✓' if peak_force_pass else '✗' }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="metric-card {{ 'pass' if endpoint_pass else ('fail' if endpoint_pass == False else '') }}">
+                    <span class="metric-label">Endpoint</span>
+                    <div class="metric-value">{{ "%.3f"|format(endpoint) }}<span class="metric-unit">mm</span></div>
+                    {% if endpoint_min is not none or endpoint_max is not none %}
+                    <div class="metric-threshold">
+                        {% if endpoint_min is not none and endpoint_max is not none %}
+                        Threshold: {{ endpoint_min }} - {{ endpoint_max }} mm
+                        {% elif endpoint_min is not none %}
+                        Min: {{ endpoint_min }} mm
+                        {% elif endpoint_max is not none %}
+                        Max: {{ endpoint_max }} mm
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if endpoint_pass is not none %}
+                    <span class="metric-status {{ 'pass' if endpoint_pass else 'fail' }}">{{ '✓' if endpoint_pass else '✗' }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="metric-card {{ 'pass' if energy_pass else ('fail' if energy_pass == False else '') }}">
+                    <span class="metric-label">Energy</span>
+                    <div class="metric-value">{{ "%.3f"|format(energy) }}<span class="metric-unit">J</span></div>
+                    {% if energy_min is not none or energy_max is not none %}
+                    <div class="metric-threshold">
+                        {% if energy_min is not none and energy_max is not none %}
+                        Threshold: {{ energy_min }} - {{ energy_max }} J
+                        {% elif energy_min is not none %}
+                        Min: {{ energy_min }} J
+                        {% elif energy_max is not none %}
+                        Max: {{ energy_max }} J
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if energy_pass is not none %}
+                    <span class="metric-status {{ 'pass' if energy_pass else 'fail' }}">{{ '✓' if energy_pass else '✗' }}</span>
+                    {% endif %}
+                </div>
+
+                {% if press_startpoint is not none and press_startpoint > 0 %}
+                <div class="metric-card">
+                    <span class="metric-label">Press Startpoint</span>
+                    <div class="metric-value">{{ "%.3f"|format(press_startpoint) }}<span class="metric-unit">mm</span></div>
+                    <div class="metric-threshold">Where force threshold was crossed</div>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Force vs Distance Chart with Energy Sidebar -->
+        <section class="chart-section">
+            <div class="chart-with-sidebar">
+                <div class="chart-main">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <span class="chart-title">Press Force Curve</span>
+                            <div class="chart-legend">
+                                <div class="legend-item">
+                                    <span class="legend-dot force"></span>
+                                    <span>Force</span>
+                                </div>
+                                {% if press_threshold is not none %}
+                                <div class="legend-item">
+                                    <span class="legend-dot press-threshold"></span>
+                                    <span>Press Threshold ({{ press_threshold }} kg)</span>
+                                </div>
+                                {% endif %}
+                                {% if force_min is not none or force_max is not none %}
+                                <div class="legend-item">
+                                    <span class="legend-dot threshold"></span>
+                                    <span>Force Threshold</span>
+                                </div>
+                                {% endif %}
+                                <div class="legend-item">
+                                    <span class="legend-dot energy"></span>
+                                    <span>Energy Region</span>
+                                </div>
+                                <div class="legend-toggle" id="polyfit-toggle" onclick="togglePolyFit()">
+                                    <span class="legend-dot polyfit"></span>
+                                    <span>Poly Fit</span>
+                                    <span class="toggle-icon">○</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="force-chart"></div>
+                        <!-- Polynomial Fit Coefficients (Collapsible) -->
+                        <details id="poly-coefficients" class="poly-coefficients">
+                            <summary>
+                                <span class="summary-icon">▶</span>
+                                Machine Strain Calibration Data
+                            </summary>
+                            <div id="poly-coeff-content" class="coeff-content"></div>
+                        </details>
+                    </div>
+                </div>
+                
+                <!-- Vertical Energy Bar -->
+                <div class="energy-sidebar {{ 'pass' if energy_pass else ('fail' if energy_pass == False else '') }}">
+                    <span class="energy-sidebar-label">Energy</span>
+                    <div class="energy-value-row">
+                        {% if energy_pass is not none %}
+                        <span class="energy-sidebar-status {{ 'pass' if energy_pass else 'fail' }}">{{ '✓' if energy_pass else '✗' }}</span>
+                        {% endif %}
+                        <span class="energy-sidebar-value {{ 'fail' if energy_pass == False else '' }}">{{ "%.3f"|format(energy) }} J</span>
+                    </div>
+                    <div class="energy-bar-wrapper">
+                        <div class="energy-bar-vertical-container">
+                            <div class="energy-bar-vertical" style="height: {{ energy_percent }}%;"></div>
+                            {% if energy_min is not none and energy_max is not none %}
+                            <div class="energy-threshold-marker min" style="bottom: {{ energy_min_percent }}%;" title="Min: {{ energy_min }} J">
+                                <span class="energy-threshold-label">{{ "%.2f"|format(energy_min) }}</span>
+                            </div>
+                            <div class="energy-threshold-marker max" style="bottom: {{ energy_max_percent }}%;" title="Max: {{ energy_max }} J">
+                                <span class="energy-threshold-label">{{ "%.2f"|format(energy_max) }}</span>
+                            </div>
+                            {% elif energy_min is not none %}
+                            <div class="energy-threshold-marker min" style="bottom: 25%;" title="Min: {{ energy_min }} J">
+                                <span class="energy-threshold-label">{{ "%.2f"|format(energy_min) }}</span>
+                            </div>
+                            {% elif energy_max is not none %}
+                            <div class="energy-threshold-marker max" style="bottom: 80%;" title="Max: {{ energy_max }} J">
+                                <span class="energy-threshold-label">{{ "%.2f"|format(energy_max) }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download Data Button -->
+        <section class="download-section">
+            <button class="download-button" onclick="downloadCSV()">
+                <span class="download-icon">📥</span>
+                Download Raw Data ({{ data_points }} points)
+            </button>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-logo">BR Equipment Control</div>
+            <p>Report generated on {{ generation_timestamp }} • App v{{ app_version }}</p>
+        </footer>
+    </div>
+
+    <script>
+        // Toggle raw data visibility
+        // Download raw data as CSV - uses full data, not clipped chart data
+        function downloadCSV() {
+            const chartData = {{ chart_data | safe }};
+            // Use full data if available, otherwise fall back to chart data
+            const positions = chartData.full_positions || chartData.positions;
+            const forces = chartData.full_forces || chartData.forces;
+            const energies = chartData.energies || [];
+            
+            // Build CSV content
+            let csv = 'Index,Position (mm),Force (kg)';
+            if (energies.length > 0) csv += ',Energy (J)';
+            csv += '\n';
+            
+            for (let i = 0; i < positions.length; i++) {
+                csv += `${i + 1},${positions[i].toFixed(3)},${forces[i].toFixed(2)}`;
+                if (energies.length > i) csv += `,${energies[i].toFixed(4)}`;
+                csv += '\n';
+            }
+            
+            // Create download
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', '{{ serial_number }}_press_data.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Chart data from Python
+        const chartData = {{ chart_data | safe }};
+
+        // 4th Order Polynomial Regression for machine strain calibration
+        function polyfit(x, y, degree) {
+            // Build the Vandermonde matrix
+            const n = x.length;
+            const m = degree + 1;
+            const X = [];
+            for (let i = 0; i < n; i++) {
+                const row = [];
+                for (let j = 0; j < m; j++) {
+                    row.push(Math.pow(x[i], j));
+                }
+                X.push(row);
+            }
+            
+            // X^T * X
+            const XtX = [];
+            for (let i = 0; i < m; i++) {
+                XtX.push([]);
+                for (let j = 0; j < m; j++) {
+                    let sum = 0;
+                    for (let k = 0; k < n; k++) {
+                        sum += X[k][i] * X[k][j];
+                    }
+                    XtX[i].push(sum);
+                }
+            }
+            
+            // X^T * y
+            const Xty = [];
+            for (let i = 0; i < m; i++) {
+                let sum = 0;
+                for (let k = 0; k < n; k++) {
+                    sum += X[k][i] * y[k];
+                }
+                Xty.push(sum);
+            }
+            
+            // Solve using Gaussian elimination
+            const augmented = XtX.map((row, i) => [...row, Xty[i]]);
+            for (let i = 0; i < m; i++) {
+                // Find pivot
+                let maxRow = i;
+                for (let k = i + 1; k < m; k++) {
+                    if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+                        maxRow = k;
+                    }
+                }
+                [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+                
+                // Eliminate column
+                for (let k = i + 1; k < m; k++) {
+                    const factor = augmented[k][i] / augmented[i][i];
+                    for (let j = i; j <= m; j++) {
+                        augmented[k][j] -= factor * augmented[i][j];
+                    }
+                }
+            }
+            
+            // Back substitution
+            const coeffs = new Array(m);
+            for (let i = m - 1; i >= 0; i--) {
+                coeffs[i] = augmented[i][m];
+                for (let j = i + 1; j < m; j++) {
+                    coeffs[i] -= augmented[i][j] * coeffs[j];
+                }
+                coeffs[i] /= augmented[i][i];
+            }
+            
+            return coeffs; // [c0, c1, c2, c3, c4] for degree 4
+        }
+        
+        function evalPoly(coeffs, x) {
+            let result = 0;
+            for (let i = 0; i < coeffs.length; i++) {
+                result += coeffs[i] * Math.pow(x, i);
+            }
+            return result;
+        }
+        
+        // Fit 4th order polynomial to force vs position data
+        // For machine strain: position (deflection) is x, force is y
+        // Filter data to only include points where force >= threshold to avoid
+        // fitting to noisy low-force data that can cause negative values at start
+        
+        // Use press_threshold if provided, otherwise default to 5 kg
+        const polyfitThreshold = {{ press_threshold if press_threshold is not none else 5 }};
+        
+        // Find first index where force >= threshold
+        let fitStartIdx = 0;
+        for (let i = 0; i < chartData.forces.length; i++) {
+            if (chartData.forces[i] >= polyfitThreshold) {
+                fitStartIdx = i;
+                break;
+            }
+        }
+        
+        // Filter data to only include points from threshold onwards
+        const fitPositions = chartData.positions.slice(fitStartIdx);
+        const fitForces = chartData.forces.slice(fitStartIdx);
+        
+        // Normalize positions relative to the threshold crossing point (deflection from contact)
+        const startPos = fitPositions[0];
+        const deflections = fitPositions.map(p => p - startPos);
+        const polyCoeffs = polyfit(deflections, fitForces, 4);
+        
+        // Generate fitted curve points
+        const fitX = [];
+        const fitY = [];
+        const minDefl = Math.min(...deflections);
+        const maxDefl = Math.max(...deflections);
+        for (let d = minDefl; d <= maxDefl; d += (maxDefl - minDefl) / 100) {
+            fitX.push(d + startPos); // Convert back to absolute position for display
+            fitY.push(evalPoly(polyCoeffs, d));
+        }
+        
+        // Display coefficients (reversed order to match firmware: x^4, x^3, x^2, x, const)
+        const coeffContent = document.getElementById('poly-coeff-content');
+        if (coeffContent) {
+            // Format: force = c4*x^4 + c3*x^3 + c2*x^2 + c1*x + c0
+            const c0 = polyCoeffs[0].toFixed(4);
+            const c1 = polyCoeffs[1].toFixed(4);
+            const c2 = polyCoeffs[2].toFixed(4);
+            const c3 = polyCoeffs[3].toFixed(4);
+            const c4 = polyCoeffs[4].toFixed(4);
+            
+            const command = `pressboi.set_strain_cal ${c4} ${c3} ${c2} ${c1} ${c0}`;
+            coeffContent.innerHTML = `
+                <div class="coeff-equation">force = ${c4}x⁴ + ${c3}x³ + ${c2}x² + ${c1}x + ${c0}</div>
+                <div class="coeff-values">
+                    <span class="coeff-label">Coefficients:</span> x⁴=${c4}, x³=${c3}, x²=${c2}, x=${c1}, c=${c0}
+                </div>
+                <div class="command-row">
+                    <code id="strain-command">${command}</code>
+                    <button class="copy-btn" onclick="copyStrainCommand()">📋 Copy Command</button>
+                </div>
+            `;
+            
+            // Store command in a global for the copy function
+            window.strainCalCommand = command;
+            window.copyStrainCommand = function() {
+                navigator.clipboard.writeText(window.strainCalCommand).then(() => {
+                    const btn = document.querySelector('.command-row .copy-btn');
+                    btn.textContent = '✓ Copied!';
+                    setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
+                });
+            };
+        }
+
+        // Create the Plotly chart
+        const traces = [];
+
+        // Main force trace
+        traces.push({
+            x: chartData.positions,
+            y: chartData.forces,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Force',
+            line: {
+                color: '#22d3ee',
+                width: 2.5
+            },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(168, 85, 247, 0.15)',
+            hovertemplate: '<b>Position:</b> %{x:.3f} mm<br><b>Force:</b> %{y:.2f} kg<extra></extra>'
+        });
+        
+        // Polynomial fit trace (hidden by default, toggled via button)
+        const polyFitTraceIndex = traces.length;  // Store index for toggling
+        traces.push({
+            x: fitX,
+            y: fitY,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Poly Fit',
+            visible: false,  // Hidden by default
+            line: {
+                color: '#f59e0b',
+                width: 2,
+                dash: 'dash'
+            },
+            hovertemplate: '<b>Polynomial Fit</b><br>Position: %{x:.3f} mm<br>Force: %{y:.2f} kg<extra></extra>'
+        });
+        
+        // Store trace index globally for toggle function
+        window.polyFitTraceIndex = polyFitTraceIndex;
+
+        // Pass zone box - threshold lines form a rectangle
+        // Define bounds for the box
+        const boxLeft = {{ endpoint_min if endpoint_min is not none else 'chartData.positions[0]' }};
+        const boxRight = {{ endpoint_max if endpoint_max is not none else 'chartData.positions[chartData.positions.length - 1]' }};
+        const boxBottom = {{ force_min if force_min is not none else '0' }};
+        const boxTop = {{ force_max if force_max is not none else 'Math.max(...chartData.forces) * 1.1' }};
+        
+        // Horizontal force threshold lines (between endpoint bounds)
+        {% if force_min is not none %}
+        traces.push({
+            x: [boxLeft, boxRight],
+            y: [{{ force_min }}, {{ force_min }}],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Force Min',
+            line: {
+                color: '#ef4444',
+                width: 2,
+                dash: 'dash'
+            },
+            hovertemplate: '<b>Force Min:</b> {{ force_min }} kg<extra></extra>'
+        });
+        {% endif %}
+
+        {% if force_max is not none %}
+        traces.push({
+            x: [boxLeft, boxRight],
+            y: [{{ force_max }}, {{ force_max }}],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Force Max',
+            line: {
+                color: '#ef4444',
+                width: 2,
+                dash: 'dash'
+            },
+            hovertemplate: '<b>Force Max:</b> {{ force_max }} kg<extra></extra>'
+        });
+        {% endif %}
+
+        // Vertical endpoint threshold lines (between force bounds)
+        {% if endpoint_min is not none %}
+        traces.push({
+            x: [{{ endpoint_min }}, {{ endpoint_min }}],
+            y: [boxBottom, boxTop],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Endpoint Min',
+            line: {
+                color: '#ef4444',
+                width: 2,
+                dash: 'dash'
+            },
+            hovertemplate: '<b>Endpoint Min:</b> {{ endpoint_min }} mm<extra></extra>'
+        });
+        {% endif %}
+        
+        {% if endpoint_max is not none %}
+        traces.push({
+            x: [{{ endpoint_max }}, {{ endpoint_max }}],
+            y: [boxBottom, boxTop],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Endpoint Max',
+            line: {
+                color: '#ef4444',
+                width: 2,
+                dash: 'dash'
+            },
+            hovertemplate: '<b>Endpoint Max:</b> {{ endpoint_max }} mm<extra></extra>'
+        });
+        {% endif %}
+
+        // End point marker - find force at endpoint position from chart data
+        const endpointPos = {{ endpoint }};
+        // Find the closest data point to the endpoint
+        let endpointForce = chartData.forces[chartData.forces.length - 1]; // Default to last point
+        let minDist = Infinity;
+        for (let i = 0; i < chartData.positions.length; i++) {
+            const dist = Math.abs(chartData.positions[i] - endpointPos);
+            if (dist < minDist) {
+                minDist = dist;
+                endpointForce = chartData.forces[i];
+            }
+        }
+        
+        traces.push({
+            x: [endpointPos],
+            y: [endpointForce],
+            type: 'scatter',
+            mode: 'markers+text',
+            name: 'End',
+            marker: {
+                color: '#f59e0b',
+                size: 14,
+                symbol: 'circle',
+                line: {
+                    color: '#ffffff',
+                    width: 2
+                }
+            },
+            text: ['END'],
+            textposition: 'top center',
+            textfont: {
+                color: '#f59e0b',
+                size: 11,
+                family: 'Inter, sans-serif'
+            },
+            hovertemplate: '<b>End Position:</b> ' + endpointPos.toFixed(3) + ' mm<br><b>Force:</b> ' + endpointForce.toFixed(2) + ' kg<extra></extra>'
+        });
+
+        // Peak force marker
+        // Press threshold line (horizontal line showing where energy recording starts)
+        {% if press_threshold is not none %}
+        traces.push({
+            x: [chartData.positions[0], chartData.positions[chartData.positions.length - 1]],
+            y: [{{ press_threshold }}, {{ press_threshold }}],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Press Threshold',
+            line: {
+                color: '#22d3ee',
+                width: 2,
+                dash: 'dot'
+            },
+            hovertemplate: '<b>Press Threshold:</b> {{ press_threshold }} kg<extra></extra>'
+        });
+        {% endif %}
+        
+        // Startpoint marker (first point in clipped data = where threshold was crossed)
+        {% if press_startpoint is not none and press_startpoint > 0 %}
+        traces.push({
+            x: [chartData.positions[0]],
+            y: [chartData.forces[0]],
+            type: 'scatter',
+            mode: 'markers+text',
+            name: 'Startpoint',
+            marker: {
+                color: '#22c55e',
+                size: 14,
+                symbol: 'circle',
+                line: {
+                    color: '#ffffff',
+                    width: 2
+                }
+            },
+            text: ['START'],
+            textposition: 'top center',
+            textfont: {
+                color: '#22c55e',
+                size: 11,
+                family: 'Inter, sans-serif'
+            },
+            hovertemplate: '<b>Startpoint</b><br>Position: %{x:.3f} mm<br>Force: %{y:.2f} kg<extra></extra>'
+        });
+        {% endif %}
+        
+        const peakIndex = chartData.forces.indexOf(Math.max(...chartData.forces));
+        traces.push({
+            x: [chartData.positions[peakIndex]],
+            y: [chartData.forces[peakIndex]],
+            type: 'scatter',
+            mode: 'markers+text',
+            name: 'Peak',
+            marker: {
+                color: '#a855f7',
+                size: 16,
+                symbol: 'star',
+                line: {
+                    color: '#ffffff',
+                    width: 2
+                }
+            },
+            text: ['PEAK: ' + chartData.forces[peakIndex].toFixed(2) + ' kg'],
+            textposition: 'bottom center',
+            textfont: {
+                color: '#a855f7',
+                size: 12,
+                family: 'JetBrains Mono, monospace'
+            },
+            hovertemplate: '<b>Peak Force:</b> %{y:.2f} kg<br><b>at Position:</b> %{x:.3f} mm<extra></extra>'
+        });
+
+        const layout = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: {
+                family: 'Inter, sans-serif',
+                color: '#a1a1aa'
+            },
+            xaxis: {
+                title: {
+                    text: 'Position (mm)',
+                    font: { size: 13 }
+                },
+                gridcolor: '#27272a',
+                zerolinecolor: '#3f3f46',
+                tickfont: { size: 11 }
+            },
+            yaxis: {
+                title: {
+                    text: 'Force (kg)',
+                    font: { size: 13 }
+                },
+                gridcolor: '#27272a',
+                zerolinecolor: '#3f3f46',
+                tickfont: { size: 11 }
+            },
+            showlegend: false,
+            margin: { t: 20, r: 20, b: 60, l: 60 },
+            hovermode: 'closest',
+            dragmode: 'zoom'
+        };
+
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+            displaylogo: false,
+            toImageButtonOptions: {
+                format: 'png',
+                filename: 'press_report_{{ serial_number }}_{{ date }}',
+                height: 600,
+                width: 1200,
+                scale: 2
+            }
+        };
+
+        Plotly.newPlot('force-chart', traces, layout, config);
+        
+        // Toggle polynomial fit trace visibility
+        window.togglePolyFit = function() {
+            const toggle = document.getElementById('polyfit-toggle');
+            const chart = document.getElementById('force-chart');
+            const isVisible = toggle.classList.contains('active');
+            
+            // Toggle visibility
+            Plotly.restyle(chart, { visible: !isVisible }, [window.polyFitTraceIndex]);
+            
+            // Update button state
+            if (isVisible) {
+                toggle.classList.remove('active');
+                toggle.querySelector('.toggle-icon').textContent = '○';
+            } else {
+                toggle.classList.add('active');
+                toggle.querySelector('.toggle-icon').textContent = '●';
+            }
+        };
+    </script>
+</body>
+</html>
+

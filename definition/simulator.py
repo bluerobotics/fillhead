@@ -151,7 +151,7 @@ def handle_command(device_sim, command, args, gui_address):
 
     elif cmd_lower.startswith("injection_valve_"):
         action = cmd_lower[len("injection_valve_"):]
-        if action in ('home', 'home_untubed', 'home_tubed'):
+        if action == 'home':
             device_sim.set_state('MAIN_STATE', 'HOMING')
             device_sim.command_queue.append(
                 (simulate_valve_homing,
@@ -165,11 +165,14 @@ def handle_command(device_sim, command, args, gui_address):
             d = float(args[0]) if args else 0.0
             device_sim.state['inj_valve_pos'] = (
                 device_sim.state.get('inj_valve_pos', 0.0) + d)
+        elif action.startswith('home_on_boot'):
+            val = args[0] if args else 'true'
+            device_sim.state['inj_valve_home_on_boot'] = (val == 'true')
         return False
 
     elif cmd_lower.startswith("vacuum_valve_"):
         action = cmd_lower[len("vacuum_valve_"):]
-        if action in ('home', 'home_untubed', 'home_tubed'):
+        if action == 'home':
             device_sim.set_state('MAIN_STATE', 'HOMING')
             device_sim.command_queue.append(
                 (simulate_valve_homing,
@@ -183,6 +186,9 @@ def handle_command(device_sim, command, args, gui_address):
             d = float(args[0]) if args else 0.0
             device_sim.state['vac_valve_pos'] = (
                 device_sim.state.get('vac_valve_pos', 0.0) + d)
+        elif action.startswith('home_on_boot'):
+            val = args[0] if args else 'true'
+            device_sim.state['vac_valve_home_on_boot'] = (val == 'true')
         return False
 
     # ── Heater commands ───────────────────────────────────────────────
@@ -453,7 +459,7 @@ def simulate_valve_homing(device_sim, valve_type, duration,
 
     device_sim.state[f'{valve_type}_homed'] = 1
     device_sim.state[f'{valve_type}_pos'] = 0.0
-    device_sim.state[f'{valve_type}_st'] = 'Homed'
+    device_sim.state[f'{valve_type}_st'] = 'Open'
     device_sim.set_state('MAIN_STATE', 'STANDBY')
     device_sim.sock.sendto(
         f"FILLHEAD_DONE: {command}".encode(), gui_address)
@@ -518,6 +524,12 @@ def update_state(device_sim):
     device_sim.state['home_sensor_m0'] = 1 if pos < 0.5 else 0
     device_sim.state['home_sensor_m1'] = 1 if pos < 0.5 else 0
 
+    # Pinch valve home sensors: active when valve is at open (homed) position
+    inj_pos = device_sim.state.get('inj_valve_pos', 0.0)
+    vac_pos = device_sim.state.get('vac_valve_pos', 0.0)
+    device_sim.state['inj_valve_home_sensor'] = 1 if abs(inj_pos) < 0.5 else 0
+    device_sim.state['vac_valve_home_sensor'] = 1 if abs(vac_pos) < 0.5 else 0
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Standalone runner
@@ -559,9 +571,13 @@ if __name__ == "__main__":
         'inj_valve_st': 'Not Homed',
         'inj_valve_homed': 0,
         'inj_valve_pos': 0.0,
+        'inj_valve_home_sensor': 0,
+        'inj_valve_home_on_boot': True,
         'vac_valve_st': 'Not Homed',
         'vac_valve_homed': 0,
         'vac_valve_pos': 0.0,
+        'vac_valve_home_sensor': 0,
+        'vac_valve_home_on_boot': True,
         'h_st': 0,
         'h_sp': 70.0,
         'h_pv': 25.0,

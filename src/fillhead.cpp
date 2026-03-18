@@ -68,8 +68,8 @@ Fillhead::Fillhead() :
     m_comms(),
     // Pass the comms pointer to all sub-controllers that need it.
     m_injector(&MOTOR_INJECTOR_A, &MOTOR_INJECTOR_B, this),
-    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, this),
-    m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, this),
+    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, HOME_SENSOR_M3, NVM_SLOT_INJ_VALVE_HOME_ON_BOOT, this),
+    m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, HOME_SENSOR_M2, NVM_SLOT_VAC_VALVE_HOME_ON_BOOT, this),
     m_heater(this),
     m_vacuum(this)
 {
@@ -84,7 +84,12 @@ Fillhead::Fillhead() :
     m_resetStartTime = 0;
     m_faultGracePeriodEnd = 0;
     m_homingPending = false;
+    m_injValveHomingPending = false;
+    m_vacValveHomingPending = false;
     m_homingDelayStart = 0;
+
+    // Initialize safety state.
+    m_lightCurtainTripped = false;
 }
 
 
@@ -110,6 +115,7 @@ void Fillhead::setup() {
 
     // Log firmware startup.
     g_errorLog.log(LOG_INFO, "=== FIRMWARE STARTUP ===");
+    g_errorLog.logf(LOG_INFO, "Firmware version: %s", FIRMWARE_VERSION);
 
     // Initialize comms first (can take time for network setup).
 #if WATCHDOG_ENABLED
@@ -130,6 +136,8 @@ void Fillhead::setup() {
     m_heater.setup();
     m_vacuum.setup();
 
+    setupLightCurtain();
+
 #if WATCHDOG_ENABLED
     // Initialize watchdog AFTER comms setup to avoid timeout during network initialization.
     g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_WD_RECOVERY;
@@ -142,11 +150,13 @@ void Fillhead::setup() {
     feedWatchdog();
 #endif
 
-    g_errorLog.logf(LOG_INFO, "Firmware version: %s", FIRMWARE_VERSION);
-
-    m_comms.reportEvent(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
-
     if (m_mainState != STATE_RECOVERED) {
+        m_comms.reportEvent(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
+#if WATCHDOG_ENABLED
+        feedWatchdog();
+#endif
+        g_errorLog.log(LOG_INFO, "Setup complete - normal boot");
+
         if (m_injector.getHomeOnBoot()) {
             m_homingPending = true;
             m_homingDelayStart = 0;
@@ -154,6 +164,20 @@ void Fillhead::setup() {
         } else {
             m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing disabled. System ready in standby mode.");
         }
+
+        if (m_injectorValve.getHomeOnBoot()) {
+            m_injValveHomingPending = true;
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Injection valve auto-home enabled.");
+        }
+        if (m_vacuumValve.getHomeOnBoot()) {
+            m_vacValveHomingPending = true;
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Vacuum valve auto-home enabled.");
+        }
+#if WATCHDOG_ENABLED
+        feedWatchdog();
+#endif
+    } else {
+        g_errorLog.log(LOG_ERROR, "Setup complete - RECOVERED from watchdog");
     }
 }
 
@@ -279,14 +303,27 @@ void Fillhead::loop() {
         }
     }
 
-    if (m_homingPending && m_mainState == STATE_STANDBY) {
+    if ((m_homingPending || m_injValveHomingPending || m_vacValveHomingPending) && m_mainState == STATE_STANDBY) {
         if (m_homingDelayStart == 0) {
             m_homingDelayStart = now;
         }
-        if (now - m_homingDelayStart > 2000) {
+        if (m_homingPending && now - m_homingDelayStart > 2000) {
             m_homingPending = false;
             m_comms.reportEvent(STATUS_PREFIX_INFO, "Initiating delayed auto-home...");
             m_injector.handleCommand(CMD_HOME, "");
+        }
+    }
+
+    if (m_homingDelayStart != 0 && now - m_homingDelayStart > 2000) {
+        if (m_injValveHomingPending) {
+            m_injValveHomingPending = false;
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing injection valve...");
+            m_injectorValve.handleCommand(CMD_INJECTION_VALVE_HOME, "");
+        }
+        if (m_vacValveHomingPending) {
+            m_vacValveHomingPending = false;
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing vacuum valve...");
+            m_vacuumValve.handleCommand(CMD_VACUUM_VALVE_HOME, "");
         }
     }
 
@@ -305,7 +342,24 @@ void Fillhead::loop() {
     }
 }
 
+void Fillhead::setupLightCurtain() {
+#if LIGHT_CURTAIN_ENABLED
+    PIN_LIGHT_CURTAIN.Mode(Connector::INPUT_DIGITAL);
+    PIN_LIGHT_CURTAIN.FilterLength(LIGHT_CURTAIN_FILTER_MS);
+#endif
+}
+
 void Fillhead::performSafetyCheck() {
+#if LIGHT_CURTAIN_ENABLED
+    bool curtainBlocked = (PIN_LIGHT_CURTAIN.State() == LIGHT_CURTAIN_ACTIVE_STATE);
+    if (curtainBlocked && !m_lightCurtainTripped) {
+        m_lightCurtainTripped = true;
+        abort();
+        m_mainState = STATE_ERROR;
+        reportEvent(STATUS_PREFIX_ERROR, "Light curtain tripped. Motors disabled. Clear obstruction and send reset.");
+    }
+#endif
+
 #if WATCHDOG_ENABLED
     feedWatchdog();
 #endif
@@ -321,29 +375,48 @@ void Fillhead::performSafetyCheck() {
  * functions for all sub-controllers.
  */
 void Fillhead::updateState() {
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_MOTOR_UPDATE;
+#endif
     m_injector.updateState();
     m_injectorValve.updateState();
     m_vacuumValve.updateState();
     m_heater.updateState();
     m_vacuum.updateState();
 
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_MOTOR_STATE_SWITCH;
+#endif
     switch (m_mainState) {
         case STATE_STANDBY:
         case STATE_BUSY: {
             uint32_t now = Milliseconds();
             bool inGracePeriod = (now < m_faultGracePeriodEnd);
 
+#if WATCHDOG_ENABLED
+            g_watchdogBreadcrumb = WD_BREADCRUMB_MOTOR_IS_FAULT;
+#endif
             if (!inGracePeriod && (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault())) {
+#if WATCHDOG_ENABLED
+                g_watchdogBreadcrumb = WD_BREADCRUMB_MOTOR_FAULT_REPORT;
+#endif
                 m_mainState = STATE_ERROR;
+                g_errorLog.log(LOG_ERROR, "Motor fault detected -> ERROR state");
                 reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Send reset to recover.");
                 break;
             }
 
-            if (m_injector.isBusy() || m_injectorValve.isBusy() || m_vacuumValve.isBusy() || m_vacuum.isBusy()) {
-                m_mainState = STATE_BUSY;
-            } else {
-                m_mainState = STATE_STANDBY;
+#if WATCHDOG_ENABLED
+            g_watchdogBreadcrumb = WD_BREADCRUMB_STATE_BUSY_CHECK;
+#endif
+            MainState newState = (m_injector.isBusy() || m_injectorValve.isBusy() || m_vacuumValve.isBusy() || m_vacuum.isBusy())
+                ? STATE_BUSY : STATE_STANDBY;
+            if (newState != m_mainState) {
+                g_errorLog.logf(LOG_DEBUG, "State: %s -> %s",
+                    (m_mainState == STATE_STANDBY) ? "STANDBY" : "BUSY",
+                    (newState == STATE_STANDBY) ? "STANDBY" : "BUSY");
             }
+            m_mainState = newState;
             break;
         }
 
@@ -510,21 +583,50 @@ void Fillhead::dispatchCommand(const Message& msg) {
 
         // --- Pinch Valve Commands ---
         case CMD_INJECTION_VALVE_HOME:
-        case CMD_INJECTION_VALVE_HOME_UNTUBED:
-        case CMD_INJECTION_VALVE_HOME_TUBED:
         case CMD_INJECTION_VALVE_OPEN:
         case CMD_INJECTION_VALVE_CLOSE:
         case CMD_INJECTION_VALVE_JOG:
             m_injectorValve.handleCommand(command_enum, args);
             break;
         case CMD_VACUUM_VALVE_HOME:
-        case CMD_VACUUM_VALVE_HOME_UNTUBED:
-        case CMD_VACUUM_VALVE_HOME_TUBED:
         case CMD_VACUUM_VALVE_OPEN:
         case CMD_VACUUM_VALVE_CLOSE:
         case CMD_VACUUM_VALVE_JOG:
             m_vacuumValve.handleCommand(command_enum, args);
             break;
+
+        case CMD_INJECTION_VALVE_HOME_ON_BOOT: {
+            char enabled[32] = "";
+            if (sscanf(args, "%31s", enabled) == 1) {
+                if (m_injectorValve.setHomeOnBoot(enabled)) {
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Injection valve home on boot set to '%s' and saved to NVM", enabled);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "injection_valve_home_on_boot");
+                } else {
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'");
+                }
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for injection_valve_home_on_boot");
+            }
+            break;
+        }
+        case CMD_VACUUM_VALVE_HOME_ON_BOOT: {
+            char enabled[32] = "";
+            if (sscanf(args, "%31s", enabled) == 1) {
+                if (m_vacuumValve.setHomeOnBoot(enabled)) {
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Vacuum valve home on boot set to '%s' and saved to NVM", enabled);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "vacuum_valve_home_on_boot");
+                } else {
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'");
+                }
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for vacuum_valve_home_on_boot");
+            }
+            break;
+        }
 
         // --- Heater Commands ---
         case CMD_HEATER_ON:
@@ -565,11 +667,16 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_SET_FORCE_OFFSET: {
             float offset = 0.0f;
             if (sscanf(args, "%f", &offset) == 1) {
-                m_injector.setForceCalibrationOffset(offset);
-                char msg_buf[128];
-                snprintf(msg_buf, sizeof(msg_buf), "Motor torque offset set to %.4f and saved to NVM", offset);
-                reportEvent(STATUS_PREFIX_INFO, msg_buf);
-                reportEvent(STATUS_PREFIX_DONE, "set_force_offset");
+                const char* mode = m_injector.getForceMode();
+                if (strcmp(mode, "load_cell") == 0) {
+                    reportEvent(STATUS_PREFIX_ERROR, "No load cell on Fillhead. Switch to motor_torque mode first.");
+                } else {
+                    m_injector.setForceCalibrationOffset(offset);
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Motor torque offset set to %.4f and saved to NVM", offset);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "set_force_offset");
+                }
             } else {
                 reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_offset");
             }
@@ -578,11 +685,16 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_SET_FORCE_SCALE: {
             float scale = 1.0f;
             if (sscanf(args, "%f", &scale) == 1) {
-                m_injector.setForceCalibrationScale(scale);
-                char msg_buf[128];
-                snprintf(msg_buf, sizeof(msg_buf), "Motor torque scale set to %.6f and saved to NVM", scale);
-                reportEvent(STATUS_PREFIX_INFO, msg_buf);
-                reportEvent(STATUS_PREFIX_DONE, "set_force_scale");
+                const char* mode = m_injector.getForceMode();
+                if (strcmp(mode, "load_cell") == 0) {
+                    reportEvent(STATUS_PREFIX_ERROR, "No load cell on Fillhead. Switch to motor_torque mode first.");
+                } else {
+                    m_injector.setForceCalibrationScale(scale);
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Motor torque scale set to %.6f and saved to NVM", scale);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "set_force_scale");
+                }
             } else {
                 reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_scale");
             }
@@ -660,8 +772,8 @@ void Fillhead::dispatchCommand(const Message& msg) {
 
         case CMD_DUMP_ERROR_LOG: {
             int count = g_errorLog.getEntryCount();
-            char line[160];
-            snprintf(line, sizeof(line), "Error log: %d entries", count);
+            char line[256];
+            snprintf(line, sizeof(line), "=== ERROR LOG: %d entries ===", count);
             reportEvent(STATUS_PREFIX_INFO, line);
 
             const char* levelNames[] = {"DEBUG", "INFO", "WARN", "ERROR", "CRIT"};
@@ -672,30 +784,55 @@ void Fillhead::dispatchCommand(const Message& msg) {
                         ? levelNames[(int)entry.level] : "???";
                     snprintf(line, sizeof(line), "[%lu] %s: %s",
                              (unsigned long)entry.timestamp, lvl, entry.message);
-                    sendMessage(line);
-                }
+                    reportEvent(STATUS_PREFIX_INFO, line);
+                    Delay_ms(5);
+                    if ((i + 1) % 5 == 0) {
 #if WATCHDOG_ENABLED
-                if ((i % 5) == 4) feedWatchdog();
+                        feedWatchdog();
 #endif
-                Delay_ms(5);
+                    }
+                }
             }
+#if WATCHDOG_ENABLED
+            feedWatchdog();
+#endif
+            reportEvent(STATUS_PREFIX_INFO, "=== END ERROR LOG ===");
 
             int hbCount = g_heartbeatLog.getEntryCount();
-            snprintf(line, sizeof(line), "Heartbeat log: %d entries", hbCount);
-            sendMessage(line);
+            if (hbCount > 0) {
+                HeartbeatEntry firstEntry, lastEntry;
+                g_heartbeatLog.getEntry(0, &firstEntry);
+                g_heartbeatLog.getEntry(hbCount - 1, &lastEntry);
+                uint32_t spanMs = lastEntry.timestamp - firstEntry.timestamp;
+                uint32_t spanHours = spanMs / 3600000;
+                uint32_t spanMins = (spanMs % 3600000) / 60000;
+                snprintf(line, sizeof(line), "=== HEARTBEAT LOG: %d entries (%luh%lum span) ===",
+                         hbCount, (unsigned long)spanHours, (unsigned long)spanMins);
+            } else {
+                snprintf(line, sizeof(line), "=== HEARTBEAT LOG: 0 entries ===");
+            }
+            reportEvent(STATUS_PREFIX_INFO, line);
+
             for (int i = 0; i < hbCount; i++) {
                 HeartbeatEntry hb;
                 if (g_heartbeatLog.getEntry(i, &hb)) {
-                    snprintf(line, sizeof(line), "[%lu] USB=%d NET=%d AVAIL=%d",
+                    snprintf(line, sizeof(line), "[%lu] U:%d N:%d A:%d",
                              (unsigned long)hb.timestamp, hb.usbConnected,
                              hb.networkActive, hb.usbAvailable);
-                    sendMessage(line);
-                }
+                    reportEvent(STATUS_PREFIX_INFO, line);
+                    if ((i + 1) % 10 == 0) {
+                        Delay_ms(50);
 #if WATCHDOG_ENABLED
-                if ((i % 5) == 4) feedWatchdog();
+                        feedWatchdog();
 #endif
-                Delay_ms(5);
+                    }
+                }
             }
+#if WATCHDOG_ENABLED
+            feedWatchdog();
+#endif
+            reportEvent(STATUS_PREFIX_INFO, "=== END HEARTBEAT LOG ===");
+            reportEvent(STATUS_PREFIX_DONE, "dump_error_log");
             break;
         }
 
@@ -742,6 +879,14 @@ void Fillhead::dispatchCommand(const Message& msg) {
             snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: Magic=0x%08X(%s) Mode=%s",
                      (unsigned int)magic, magic_status, mode_str);
             sendMessage(nvm_buf);
+
+            // Motor torque calibration (NVM slots 5 & 6 - fixed-point)
+            float mt_scale = (float)nvm_values[5] / 100000.0f;
+            float mt_offset = (float)nvm_values[6] / 10000.0f;
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: MotorTorque: Scale=%.6f Offset=%.4f %%",
+                     mt_scale, mt_offset);
+            sendMessage(nvm_buf);
+
             const char* pol_str = (nvm_values[3] == 1) ? "inverted" : "normal";
             snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: Polarity=%s HomeOnBoot=%s",
                      pol_str, (nvm_values[13] == 1) ? "true" : "false");
@@ -753,6 +898,33 @@ void Fillhead::dispatchCommand(const Message& msg) {
             snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: Retract=%.2fmm PressThreshold=%.2fkg",
                      retract_mm, threshold_kg);
             sendMessage(nvm_buf);
+
+            // Machine strain coefficients (NVM slots 8-12 - IEEE float as bits)
+            float strain_coeffs[5];
+            const float default_coeffs[5] = {MACHINE_STRAIN_COEFF_X4, MACHINE_STRAIN_COEFF_X3,
+                                              MACHINE_STRAIN_COEFF_X2, MACHINE_STRAIN_COEFF_X1,
+                                              MACHINE_STRAIN_COEFF_C};
+            for (int j = 0; j < 5; j++) {
+                int32_t coeff_bits = nvm_values[8 + j];
+                if (coeff_bits != 0 && coeff_bits != -1) {
+                    memcpy(&strain_coeffs[j], &coeff_bits, sizeof(float));
+                } else {
+                    strain_coeffs[j] = default_coeffs[j];
+                }
+            }
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: StrainCoeffs x4=%.4f x3=%.4f x2=%.4f x1=%.4f c=%.4f",
+                     strain_coeffs[0], strain_coeffs[1], strain_coeffs[2], strain_coeffs[3], strain_coeffs[4]);
+            sendMessage(nvm_buf);
+
+            // Pinch valve home-on-boot flags (NVM slots 16 & 17)
+            NvmManager &nvmMgrValve = NvmManager::Instance();
+            int32_t injValveHob = nvmMgrValve.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_INJ_VALVE_HOME_ON_BOOT));
+            int32_t vacValveHob = nvmMgrValve.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_VAC_VALVE_HOME_ON_BOOT));
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: InjValveHomeOnBoot=%s VacValveHomeOnBoot=%s",
+                     (injValveHob == 1) ? "true" : "false",
+                     (vacValveHob == 1) ? "true" : "false");
+            sendMessage(nvm_buf);
+
             reportEvent(STATUS_PREFIX_DONE, "dump_nvm");
             break;
         }
@@ -803,7 +975,8 @@ void Fillhead::publishTelemetry() {
         "%s,"
         "%s,"
         "%s,"
-        "inj_st:%s,inj_v_st:%s,vac_v_st:%s,h_st_str:%s,vac_st_str:%s",
+        "inj_st:%s,inj_v_st:%s,vac_v_st:%s,h_st_str:%s,vac_st_str:%s,"
+        "lc:%d",
         TELEM_PREFIX,
         mainStateStr,
         m_injector.getTelemetryString(),
@@ -815,10 +988,14 @@ void Fillhead::publishTelemetry() {
         m_injectorValve.getState(),
         m_vacuumValve.getState(),
         m_heater.getState(),
-        m_vacuum.getState()
+        m_vacuum.getState(),
+        (int)m_lightCurtainTripped
     );
 
-    m_comms.enqueueTx(telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
+    bool guiDiscovered = m_comms.isGuiDiscovered();
+    IpAddress targetIp = guiDiscovered ? m_comms.getGuiIp() : IpAddress(0, 0, 0, 0);
+    uint16_t targetPort = guiDiscovered ? m_comms.getGuiPort() : 0;
+    m_comms.enqueueTx(telemetryBuffer, targetIp, targetPort);
 }
 
 #if WATCHDOG_ENABLED
@@ -879,24 +1056,27 @@ void Fillhead::handleWatchdogRecovery() {
  * @brief Initialize the hardware watchdog timer.
  */
 void Fillhead::initializeWatchdog() {
-    // Enable the digital interface clock for the watchdog.
-    MCLK->APBAMASK.reg |= MCLK_APBAMASK_WDT;
+    // Disable watchdog during configuration
+    WDT->CTRLA.reg = 0;
+    while(WDT->SYNCBUSY.reg);
 
-    // Configure watchdog: early warning interrupt and reset after timeout.
-    WDT->CONFIG.reg = WDT_CONFIG_PER(WDT_CONFIG_PER_CYC2048);
-    WDT->EWCTRL.reg = WDT_EWCTRL_EWOFFSET(WDT_EWCTRL_EWOFFSET_CYC2048);
+    // Period value 0x5 = 256 cycles at 1kHz WDT clock ≈ 256ms
+    uint8_t per_value = 0x5;
 
-    // Clear and enable interrupt.
+    WDT->CONFIG.reg = WDT_CONFIG_PER(per_value);
+    while(WDT->SYNCBUSY.reg);
+
+    // Enable early warning interrupt
     WDT->INTENSET.reg = WDT_INTENSET_EW;
+
     NVIC_EnableIRQ(WDT_IRQn);
+    NVIC_SetPriority(WDT_IRQn, 0);  // Highest priority
 
-    // Enable watchdog.
+    // Enable watchdog
     WDT->CTRLA.reg = WDT_CTRLA_ENABLE;
-    while (WDT->SYNCBUSY.reg) {
-        // Wait for synchronization
-    }
+    while(WDT->SYNCBUSY.reg);
 
-    g_errorLog.log(LOG_INFO, "Watchdog initialized");
+    g_errorLog.log(LOG_INFO, "Watchdog initialized (256ms timeout)");
 }
 
 /**
@@ -988,6 +1168,14 @@ void Fillhead::abort() {
  * @brief Resets any error states, clears motor faults, and returns the system to standby.
  */
 void Fillhead::clearErrors() {
+#if LIGHT_CURTAIN_ENABLED
+    if (PIN_LIGHT_CURTAIN.State() == LIGHT_CURTAIN_ACTIVE_STATE) {
+        reportEvent(STATUS_PREFIX_ERROR, "Cannot reset: light curtain still blocked.");
+        return;
+    }
+    m_lightCurtainTripped = false;
+#endif
+
     reportEvent(STATUS_PREFIX_INFO, "Reset received. Clearing errors...");
 #if WATCHDOG_ENABLED
     clearWatchdogRecovery();

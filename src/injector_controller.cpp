@@ -149,6 +149,18 @@ void Injector::setup() {
     m_motorA->EnableRequest(true);
     m_motorB->EnableRequest(true);
 
+    uint32_t enableTimeout = Milliseconds() + 2000;
+    while (Milliseconds() < enableTimeout) {
+        if (m_motorA->StatusReg().bit.Enabled && m_motorB->StatusReg().bit.Enabled) {
+            break;
+        }
+    }
+    if (!m_motorA->StatusReg().bit.Enabled || !m_motorB->StatusReg().bit.Enabled) {
+        g_errorLog.logf(LOG_WARNING, "Motor enable timeout. M0=%d, M1=%d",
+                 m_motorA->StatusReg().bit.Enabled ? 1 : 0,
+                 m_motorB->StatusReg().bit.Enabled ? 1 : 0);
+    }
+
     setupHomeSensors();
 
     // --- NVM Initialization (magic "FLH1" = 0x464C4831) ---
@@ -174,6 +186,9 @@ void Injector::setup() {
         int32_t retractBitsInit;
         memcpy(&retractBitsInit, &defaultRetract, sizeof(float));
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(14 * 4), retractBitsInit);
+
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_INJ_VALVE_HOME_ON_BOOT), 1);
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_VAC_VALVE_HOME_ON_BOOT), 1);
 
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(7 * 4), NVM_MAGIC_NUMBER);
     }
@@ -679,6 +694,14 @@ void Injector::updateState() {
                         m_moveState = MOVE_PAUSED;
                         return;
                     }
+                    // TODO: When load cell hardware is added, check force limit here:
+                    // if (m_active_op_force_limit_kg > 0.1f) {
+                    //     float current_force = getLoadCellForce();
+                    //     if (current_force >= m_active_op_force_limit_kg) {
+                    //         handleLimitReached("Force limit", current_force);
+                    //         return;
+                    //     }
+                    // }
                 } else {
                     if (checkTorqueLimit()) {
                         char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
@@ -1426,6 +1449,9 @@ void Injector::setRetract(const char* args) {
     snprintf(msg, sizeof(msg), "Retract position set to %.2f mm (%ld steps from home) at %.2f mm/s",
              position_mm, position_steps, m_retractSpeedMms);
     reportEvent(STATUS_PREFIX_INFO, msg);
+    char dbg[128];
+    snprintf(dbg, sizeof(dbg), "Retract debug: home_steps=%ld, retract_steps=%ld", m_machineHomeReferenceSteps, m_retractReferenceSteps);
+    reportEvent(STATUS_PREFIX_INFO, dbg);
     reportEvent(STATUS_PREFIX_DONE, "set_retract");
 }
 
@@ -1435,6 +1461,9 @@ void Injector::retract(const char* args) {
         return;
     }
     if (m_retractReferenceSteps == LONG_MIN) {
+        char dbg[128];
+        snprintf(dbg, sizeof(dbg), "Retract debug: reference steps not set (home=%ld)", m_machineHomeReferenceSteps);
+        reportEvent(STATUS_PREFIX_INFO, dbg);
         reportEvent(STATUS_PREFIX_ERROR, "Error: Retract position not set. Use SET_RETRACT first.");
         return;
     }
@@ -1818,6 +1847,10 @@ bool Injector::checkForceSensorStatus(const char** errorMsg) {
     if (strcmp(m_force_mode, "motor_torque") == 0) {
         return false;
     }
+    // TODO: When load cell hardware is added, implement full validation:
+    // - Check isConnected()
+    // - Validate reading >= FORCE_SENSOR_MIN_KG (-10 kg)
+    // - Validate reading <= FORCE_SENSOR_MAX_LIMIT_KG (1440 kg)
     *errorMsg = "Load cell not available on Fillhead. Use motor_torque mode.";
     return true;
 }
@@ -1961,11 +1994,102 @@ void Injector::updateJoules() {
         m_prevForceValid = false;
         return;
     }
-    // Motor torque mode has no continuous force signal — skip integration.
-    // Load cell mode is not available on Fillhead hardware — skip as well.
-    // Structure is preserved for future load cell addition.
-    m_jouleIntegrationActive = false;
-    m_prevForceValid = false;
+
+    if (strcmp(m_active_op_force_mode, "motor_torque") == 0) {
+        m_jouleIntegrationActive = false;
+        m_prevForceValid = false;
+        return;
+    }
+
+    // Load cell force × distance energy integration at 50Hz
+    long current_pos_steps = m_motorA->PositionRefCommanded();
+    double current_pos_mm = static_cast<double>(current_pos_steps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+    double distance_mm = current_pos_mm - m_prev_position_mm;
+    double abs_distance_mm = fabs(distance_mm);
+
+    // TODO: Replace with actual load cell reading when hardware is available
+    float raw_force_sample = 0.0f;
+    if (!m_prevForceValid) {
+        m_prevForceKg = raw_force_sample;
+        if (m_prevForceKg < 0.0f) m_prevForceKg = 0.0f;
+        m_prevMachineDeflectionMm = static_cast<double>(estimateMachineDeflectionFromForce(m_prevForceKg));
+        m_prevForceValid = true;
+        m_prev_position_mm = current_pos_mm;
+        return;
+    }
+
+    float raw_force_kg = raw_force_sample;
+    if (raw_force_kg < 0.0f) raw_force_kg = 0.0f;
+
+    float clamped_force_kg = raw_force_kg;
+    if (m_active_op_force_limit_kg > 0.0f && clamped_force_kg > m_active_op_force_limit_kg) {
+        clamped_force_kg = m_active_op_force_limit_kg;
+    }
+
+    if (abs_distance_mm <= 0.0) {
+        m_prev_position_mm = current_pos_mm;
+        m_prevForceKg = clamped_force_kg;
+        if (m_machineStrainContactActive) {
+            m_prevMachineDeflectionMm = static_cast<double>(estimateMachineDeflectionFromForce(clamped_force_kg));
+        } else {
+            m_prevMachineDeflectionMm = 0.0;
+        }
+        return;
+    }
+
+    if (!m_machineStrainContactActive) {
+        if (clamped_force_kg >= m_press_threshold_kg) {
+            double contact_machine_def_mm = static_cast<double>(estimateMachineDeflectionFromForce(clamped_force_kg));
+            if (contact_machine_def_mm < 0.0) contact_machine_def_mm = 0.0;
+            m_machineStrainContactActive = true;
+            m_machineStrainBaselinePosMm = current_pos_mm - contact_machine_def_mm;
+            m_prevMachineDeflectionMm = contact_machine_def_mm;
+            m_prevTotalDeflectionMm = contact_machine_def_mm;
+            m_machineEnergyJ = 0.0;
+            m_prev_position_mm = current_pos_mm;
+            m_prevForceKg = clamped_force_kg;
+            m_press_startpoint_mm = static_cast<float>(current_pos_mm);
+            return;
+        } else {
+            m_machineStrainBaselinePosMm = current_pos_mm;
+            m_prevMachineDeflectionMm = 0.0;
+            m_prevTotalDeflectionMm = 0.0;
+            m_machineEnergyJ = 0.0;
+            m_prev_position_mm = current_pos_mm;
+            m_prevForceKg = clamped_force_kg;
+            return;
+        }
+    }
+
+    double actual_force_avg = 0.5 * static_cast<double>(m_prevForceKg + clamped_force_kg);
+    double total_deflection_mm = current_pos_mm - m_machineStrainBaselinePosMm;
+    if (total_deflection_mm < 0.0) total_deflection_mm = 0.0;
+
+    double machine_deflection_at_force = static_cast<double>(estimateMachineDeflectionFromForce(clamped_force_kg));
+
+    double machine_ratio = 0.0;
+    if (total_deflection_mm > 0.001) {
+        machine_ratio = machine_deflection_at_force / total_deflection_mm;
+        if (machine_ratio > 1.0) machine_ratio = 1.0;
+        if (machine_ratio < 0.0) machine_ratio = 0.0;
+    }
+
+    double gross_increment = actual_force_avg * abs_distance_mm * 0.00981;
+    double machine_increment = gross_increment * machine_ratio;
+    double net_increment = gross_increment - machine_increment;
+    if (net_increment < 0.0) net_increment = 0.0;
+
+    m_joules += net_increment;
+    m_machineEnergyJ += machine_increment;
+
+    m_prev_position_mm = current_pos_mm;
+    m_prevForceKg = clamped_force_kg;
+
+    if (m_active_op_force_limit_kg > 0.0f && raw_force_kg >= m_active_op_force_limit_kg) {
+        m_jouleIntegrationActive = false;
+        m_forceLimitTriggered = true;
+        m_prevForceValid = false;
+    }
 }
 
 //==================================================================================================

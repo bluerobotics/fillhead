@@ -114,10 +114,16 @@ private:
 
     /**
      * @brief Performs safety checks and, when enabled, participates in watchdog feeding.
-     * @details Currently a placeholder for future safety logic. Mirrors the role of
-     *          Pressboi's performSafetyCheck() so watchdog integration remains similar.
+     * @details Checks the light curtain sensor each loop iteration. If the beam is broken,
+     *          all motion is aborted and the system enters STATE_ERROR. Also feeds the
+     *          watchdog timer to prevent a system reset.
      */
     void performSafetyCheck();
+
+    /**
+     * @brief Configures the light curtain IO pin as a digital input with debounce filtering.
+     */
+    void setupLightCurtain();
 
 	/**
 	 * @brief Master command handler; dispatches incoming commands to the correct sub-system.
@@ -209,5 +215,10 @@ private:
     uint32_t m_resetStartTime;
     uint32_t m_faultGracePeriodEnd;
     bool m_homingPending;
+    bool m_injValveHomingPending;
+    bool m_vacValveHomingPending;
     uint32_t m_homingDelayStart;
+
+    // Safety
+    bool m_lightCurtainTripped;         ///< Latched flag: true once the light curtain beam is broken, cleared on reset.
 };

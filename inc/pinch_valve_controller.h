@@ -6,8 +6,9 @@
  *
  * @details This file defines the `PinchValve` class, which encapsulates the logic for
  * controlling one of the motorized pinch valves. It includes a detailed state machine
- * for managing homing, opening, closing, and jogging operations. The class also handles
- * torque-based sensing for homing and provides a telemetry interface.
+ * for managing homing (via hall effect sensor), opening, closing, and jogging operations.
+ * The class also supports NVM-backed home-on-boot configuration and provides a telemetry
+ * interface.
  */
 #pragma once
 
@@ -15,6 +16,7 @@
 #include "comms_controller.h"
 #include "ClearCore.h"
 #include "commands.h"
+#include "NvmManager.h"
 
 class Fillhead; // Forward declaration
 
@@ -31,33 +33,37 @@ enum PinchValveState {
 	VALVE_HOMING,           ///< The valve is currently executing its homing sequence.
 	VALVE_JOGGING,          ///< The valve is performing a manual jog move.
 	VALVE_RESETTING,        ///< The valve is waiting for motion to stop before completing a reset.
-	VALVE_ERROR,            ///< An error has occurred (e.g., timeout, motor fault, torque limit).
+	VALVE_ERROR,            ///< An error has occurred (e.g., timeout, motor fault, sensor not found).
 };
 
 /**
  * @class PinchValve
- * @brief Controls a single motorized pinch valve.
+ * @brief Controls a single motorized pinch valve using hall effect sensor homing.
  *
  * @details This class encapsulates all logic for a single pinch valve actuator.
  * It manages a multi-level state machine to handle complex, non-blocking
- * operations like the multi-phase homing sequence. It provides a simple public
- * interface (`open()`, `close()`, `home()`) while abstracting away the underlying
- * motor control, torque monitoring, and state transitions.
+ * operations like the multi-phase homing sequence. Homing moves the valve
+ * toward the OPEN end of its stroke where a hall sensor is mounted. The valve
+ * provides a simple public interface (`open()`, `close()`, `home()`) while
+ * abstracting away the underlying motor control and state transitions.
  */
 class PinchValve {
 public:
 	/**
 	 * @brief Constructs a new PinchValve object.
-	 * @param name A string identifier for the valve (e.g., "InjectionValve"), used for logging.
+	 * @param name A string identifier for the valve (e.g., "inj_valve"), used for logging.
 	 * @param motor A pointer to the ClearCore `MotorDriver` object that this class will control.
+	 * @param homeSensor A reference to the ClearCore connector for this valve's hall effect home sensor.
+	 * @param nvmSlot The NVM byte offset for this valve's home-on-boot setting.
 	 * @param controller A pointer to the main `Fillhead` controller, used for reporting events.
 	 */
-	PinchValve(const char* name, MotorDriver* motor, Fillhead* controller);
+	PinchValve(const char* name, MotorDriver* motor, Connector& homeSensor, int nvmSlot, Fillhead* controller);
 
 	/**
-	 * @brief Initializes the pinch valve motor and its configuration.
-	 * @details Configures the motor's operational parameters and enables the driver.
-	 * This should be called once at startup.
+	 * @brief Initializes the pinch valve motor, home sensor, and NVM settings.
+	 * @details Configures the motor's operational parameters, sets up the home sensor
+	 * digital input with filtering, loads the home-on-boot setting from NVM,
+	 * and enables the motor driver. This should be called once at startup.
 	 */
 	void setup();
 
@@ -77,11 +83,11 @@ public:
 	void handleCommand(Command cmd, const char* args);
 
 	/**
-	 * @brief Initiates the homing sequence for the valve.
-	 * @param is_tubed A boolean indicating whether the homing sequence should
-	 *                 use the parameters for a tubed or untubed state (affects torque and offset).
+	 * @brief Initiates the hall sensor homing sequence for the valve.
+	 * @details The valve moves toward the OPEN end of its stroke to find the hall sensor,
+	 * backs off, re-approaches slowly for precision, then sets the position as zero.
 	 */
-	void home(bool is_tubed);
+	void home();
 
 	/**
 	 * @brief Commands the valve to move to the fully open position (its homed position).
@@ -99,161 +105,103 @@ public:
 	 */
 	void jog(const char* args);
 
-	/**
-	 * @brief Enables the motor for this valve.
-	 */
 	void enable();
-
-	/**
-	 * @brief Disables the motor for this valve.
-	 */
 	void disable();
-
-	/**
-	 * @brief Aborts any ongoing motion by commanding a deceleration stop.
-	 */
 	void abort();
-
-	/**
-	 * @brief Resets the valve's state machines and error conditions to their default idle state.
-	 */
 	void reset();
 
-	/**
-	 * @brief Checks if the valve has been successfully homed.
-	 * @return `true` if homed, `false` otherwise.
-	 */
 	bool isHomed() const;
-
-	/**
-	 * @brief Checks if the valve is currently in the fully open state.
-	 * @return `true` if the `m_state` is `VALVE_OPEN`.
-	 */
 	bool isOpen() const;
-
-	/**
-	 * @brief Gets the telemetry string for this valve.
-	 * @return A constant character pointer to a formatted string of telemetry data
-	 *         (e.g., position, torque, homing status).
-	 */
 	const char* getTelemetryString();
-
-	/**
-	 * @brief Checks if the valve's motor is in a hardware fault state.
-	 * @return `true` if the motor driver's fault bit is set, `false` otherwise.
-	 */
 	bool isInFault() const;
-
-	/**
-	 * @brief Checks if the valve is busy with an operation.
-	 * @return `true` if the valve is homing, opening, closing, or jogging.
-	 */
 	bool isBusy() const;
-
-	/**
-	 * @brief Gets the current state of the valve as a human-readable string.
-	 * @return A `const char*` representing the current state (e.g., "VALVE_HOMING").
-	 */
 	const char* getState() const;
 
-private:
 	/**
-	 * @enum MoveType
-	 * @brief Defines the type of motion being performed in the VALVE_MOVING state.
+	 * @brief Gets the NVM-backed home-on-boot setting.
+	 * @return `true` if the valve should auto-home on boot.
 	 */
+	bool getHomeOnBoot() const;
+
+	/**
+	 * @brief Sets the home-on-boot flag and persists it to NVM.
+	 * @param enabled "true" or "false" as a C-string.
+	 * @return `true` if the value was valid and saved.
+	 */
+	bool setHomeOnBoot(const char* enabled);
+
+	/**
+	 * @brief Reads the current state of the hall effect home sensor.
+	 * @return `true` if the sensor is in its active (triggered) state.
+	 */
+	bool isHomeSensorTriggered() const;
+
+private:
 	typedef enum {
-		MOVE_TYPE_NONE,     ///< No specific move type is active.
-		MOVE_TYPE_OPEN,     ///< The valve is performing an 'open' operation.
-		MOVE_TYPE_CLOSE     ///< The valve is performing a 'close' operation.
+		MOVE_TYPE_NONE,
+		MOVE_TYPE_OPEN,
+		MOVE_TYPE_CLOSE
 	} MoveType;
 
-	/**
-	 * @brief Low-level helper to command a motor move.
-	 * @param steps The target position relative to the current position, in motor steps.
-	 * @param velocity_sps The maximum velocity for the move, in steps per second.
-	 * @param accel_sps2 The acceleration for the move, in steps per second squared.
-	 */
 	void moveSteps(long steps, int velocity_sps, int accel_sps2);
-
-	/**
-	 * @brief Gets the smoothed motor torque value using an EWMA filter.
-	 * @return The smoothed torque value as a percentage.
-	 */
 	float getSmoothedTorque();
-
-	/**
-	 * @brief Gets the instantaneous, unfiltered motor torque value.
-	 * @return The current torque reading as a percentage.
-	 */
 	float getInstantaneousTorque();
-
-	/**
-	 * @brief Checks if the motor torque has exceeded the current limit.
-	 * @return `true` if the torque limit is exceeded, `false` otherwise.
-	 */
 	bool checkTorqueLimit();
-
-	/**
-	 * @brief Formats and sends a status message via the main `Fillhead` controller.
-	 * @param statusType The prefix for the message (e.g., "INFO: ").
-	 * @param message The content of the message to send.
-	 */
 	void reportEvent(const char* statusType, const char* message);
+	void setupHomeSensor();
 
-	/**
-	 * @enum OperatingPhase
-	 * @brief Defines the sub-states for simple motion operations like open, close, or jog.
-	 */
 	typedef enum {
-		PHASE_IDLE,         ///< No operation is active.
-		PHASE_START,        ///< The operation is being initiated.
-		PHASE_WAIT_TO_START,///< Waiting for the motor to begin moving before checking status.
-		PHASE_MOVING        ///< The motor is actively moving towards its target.
+		PHASE_IDLE,
+		PHASE_START,
+		PHASE_WAIT_TO_START,
+		PHASE_MOVING
 	} OperatingPhase;
 
 	/**
 	 * @enum HomingPhase
-	 * @brief Defines the detailed sub-states for the multi-step homing sequence.
+	 * @brief Defines the sub-states for the hall sensor homing sequence.
+	 * @details The valve moves toward OPEN (negative direction) to find the sensor,
+	 * backs off toward CLOSED (positive), then slowly re-approaches the sensor.
 	 */
 	typedef enum {
-		HOMING_PHASE_IDLE,              ///< Homing is not active.
-		INITIAL_BACKOFF_START,          ///< Starting the initial move away from a potential start-on-hard-stop condition.
-		INITIAL_BACKOFF_WAIT_TO_START,  ///< Waiting for the initial backoff move to start.
-		INITIAL_BACKOFF_MOVING,         ///< Executing the initial backoff move.
-		RAPID_SEARCH_START,             ///< Starting the high-speed search for the hard stop.
-		RAPID_SEARCH_WAIT_TO_START,     ///< Waiting for the rapid search to start.
-		RAPID_SEARCH_MOVING,            ///< Executing the rapid search and monitoring torque.
-		BACKOFF_START,                  ///< Starting the move away from the hard stop after the first touch.
-		BACKOFF_WAIT_TO_START,          ///< Waiting for the backoff move to start.
-		BACKOFF_MOVING,                 ///< Executing the backoff move.
-		SLOW_SEARCH_START,              ///< Starting the slow-speed search for a precise hard stop location.
-		SLOW_SEARCH_WAIT_TO_START,      ///< Waiting for the slow search to start.
-		SLOW_SEARCH_MOVING,             ///< Executing the slow search and monitoring torque.
-		SET_OFFSET_START,               ///< Starting the final move to the operational 'open' position.
-		SET_OFFSET_WAIT_TO_START,       ///< Waiting for the final offset move to start.
-		SET_OFFSET_MOVING,              ///< Executing the final offset move.
-		SET_ZERO                        ///< Setting the final 'open' position as the logical zero.
+		HOMING_PHASE_IDLE,
+		CHECK_SENSOR,                   ///< Check if already on the sensor; if so, skip to backoff.
+		RAPID_APPROACH_START,           ///< Start rapid move toward open/sensor (negative direction).
+		RAPID_APPROACH_WAIT_TO_START,   ///< Wait for the rapid move to begin.
+		RAPID_APPROACH_MOVING,          ///< Moving toward sensor; stop when triggered.
+		BACKOFF_START,                  ///< Start moving away from sensor (positive/closed direction).
+		BACKOFF_WAIT_TO_START,          ///< Wait for the backoff move to begin.
+		BACKOFF_MOVING,                 ///< Executing backoff move.
+		SLOW_APPROACH_START,            ///< Start slow precision approach back toward sensor.
+		SLOW_APPROACH_WAIT_TO_START,    ///< Wait for the slow move to begin.
+		SLOW_APPROACH_MOVING,           ///< Moving slowly toward sensor; stop when triggered.
+		SET_ZERO                        ///< Set current position as logical zero (open).
 	} HomingPhase;
 
-	const char* m_name;                 ///< The name of the valve instance (e.g., "InjectionValve").
-	MotorDriver* m_motor;               ///< Pointer to the motor driver for this valve.
-	Fillhead* m_controller;             ///< Pointer to the main `Fillhead` controller for event reporting.
-	PinchValveState m_state;            ///< The main state of the pinch valve.
-	HomingPhase m_homingPhase;          ///< The current phase of the homing sequence.
-	OperatingPhase m_opPhase;           ///< The current phase of a standard open/close/jog operation.
-	MoveType m_moveType;                ///< The type of move being performed (open or close).
-	uint32_t m_moveStartTime;           ///< Timestamp (ms) when a move operation was started, used for timeout.
-	bool m_isHomed;                     ///< Flag indicating if the valve has been successfully homed.
-	uint32_t m_homingStartTime;         ///< Timestamp (ms) when a homing sequence was started, used for timeout.
-	float m_torqueLimit;                ///< The current torque limit (%) for detecting hard stops.
-	float m_smoothedTorque;             ///< The smoothed torque value (EWMA filtered).
-	bool m_firstTorqueReading;          ///< Flag to handle the first reading for the torque smoothing filter.
-	char m_telemetryBuffer[128];        ///< Buffer for the formatted telemetry string.
-	long m_homingDistanceSteps;         ///< The total travel distance (steps) for homing searches.
-	long m_homingBackoffSteps;          ///< The backoff distance (steps) used in homing.
-	long m_homingFinalOffsetSteps;      ///< The final offset from the hard stop to the 'open' position, in steps.
-	int m_homingUnifiedSps;             ///< The unified speed (steps/sec) for all homing moves.
-	int m_homingAccelSps2;              ///< The acceleration (steps/sec^2) for homing moves.
-	float m_homingSearchTorque;         ///< The torque limit (%) used for hard stop detection during homing.
-	float m_homingBackoffTorque;        ///< The higher torque limit (%) used for backoff moves during homing.
+	const char* m_name;
+	MotorDriver* m_motor;
+	Connector& m_homeSensor;
+	Fillhead* m_controller;
+	int m_nvmSlot;
+	bool m_homeOnBoot;
+
+	PinchValveState m_state;
+	HomingPhase m_homingPhase;
+	OperatingPhase m_opPhase;
+	MoveType m_moveType;
+	uint32_t m_moveStartTime;
+	bool m_isHomed;
+	uint32_t m_homingStartTime;
+
+	float m_torqueLimit;
+	float m_smoothedTorque;
+	bool m_firstTorqueReading;
+
+	char m_telemetryBuffer[160];
+
+	long m_homingDistanceSteps;
+	long m_homingBackoffSteps;
+	int m_homingRapidSps;
+	int m_homingSlowSps;
+	int m_homingAccelSps2;
 };

@@ -76,15 +76,13 @@
  * @name Valve Commands (Fillhead-specific)
  * @{
  */
+#define CMD_STR_INJECTION_VALVE_HOME_ON_BOOT "injection_valve_home_on_boot "
 #define CMD_STR_INJECTION_VALVE_HOME        "injection_valve_home"
-#define CMD_STR_INJECTION_VALVE_HOME_UNTUBED "injection_valve_home_untubed"
-#define CMD_STR_INJECTION_VALVE_HOME_TUBED  "injection_valve_home_tubed"
 #define CMD_STR_INJECTION_VALVE_OPEN        "injection_valve_open"
 #define CMD_STR_INJECTION_VALVE_CLOSE       "injection_valve_close"
 #define CMD_STR_INJECTION_VALVE_JOG         "injection_valve_jog "
+#define CMD_STR_VACUUM_VALVE_HOME_ON_BOOT   "vacuum_valve_home_on_boot "
 #define CMD_STR_VACUUM_VALVE_HOME           "vacuum_valve_home"
-#define CMD_STR_VACUUM_VALVE_HOME_UNTUBED   "vacuum_valve_home_untubed"
-#define CMD_STR_VACUUM_VALVE_HOME_TUBED     "vacuum_valve_home_tubed"
 #define CMD_STR_VACUUM_VALVE_OPEN           "vacuum_valve_open"
 #define CMD_STR_VACUUM_VALVE_CLOSE          "vacuum_valve_close"
 #define CMD_STR_VACUUM_VALVE_JOG            "vacuum_valve_jog "
@@ -167,15 +165,13 @@ typedef enum {
     CMD_CANCEL_INJECTION,
 
     // Valve Commands
+    CMD_INJECTION_VALVE_HOME_ON_BOOT,
     CMD_INJECTION_VALVE_HOME,
-    CMD_INJECTION_VALVE_HOME_UNTUBED,
-    CMD_INJECTION_VALVE_HOME_TUBED,
     CMD_INJECTION_VALVE_OPEN,
     CMD_INJECTION_VALVE_CLOSE,
     CMD_INJECTION_VALVE_JOG,
+    CMD_VACUUM_VALVE_HOME_ON_BOOT,
     CMD_VACUUM_VALVE_HOME,
-    CMD_VACUUM_VALVE_HOME_UNTUBED,
-    CMD_VACUUM_VALVE_HOME_TUBED,
     CMD_VACUUM_VALVE_OPEN,
     CMD_VACUUM_VALVE_CLOSE,
     CMD_VACUUM_VALVE_JOG,

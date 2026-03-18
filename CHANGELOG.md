@@ -2,6 +2,21 @@
 
 All notable changes to the Fillhead firmware will be documented in this file.
 
+## [0.4.0] - 2026-03-18
+
+### Pressboi Parity (Telemetry)
+- Added `torque_avg` (wire key `ta`) to firmware telemetry — average of M0/M1 torque, matching Pressboi's `torque_avg` field
+- Added combined `homed` flag (wire key `hm`) to firmware telemetry — 1 when both machine and cartridge homing are complete, matching Pressboi's single `homed` field
+
+### Telemetry Key Mapping
+- Added `firmware_key` field to all `telemetry.json` entries where the firmware wire key differs from the canonical name (e.g. `force_load_cell` → `flc`, `current_pos` → `cp`)
+- Added `derived_from` annotations for fields computed on the app side (`motors_enabled`, `force_source`)
+
+### Documentation
+- Added `transducer/` folder with HX711 load cell interface documentation (`README.md`) and Ruggeduino Arduino sketch (`hx711_arduino.ino`)
+
+---
+
 ## [0.3.0] - 2026-03-18
 
 ### ForceSensor Port (CRITICAL)

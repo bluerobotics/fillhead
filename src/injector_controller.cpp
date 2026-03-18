@@ -2294,15 +2294,18 @@ const char* Injector::getTelemetryString() {
 
     // Stage 2: Pressboi-compatible fields (appended if space remains)
     if (n > 0 && (size_t)n < sizeof(m_telemetryBuffer) - 1) {
+        int homed = (m_homingMachineDone && m_homingCartridgeDone) ? 1 : 0;
         std::snprintf(m_telemetryBuffer + n, sizeof(m_telemetryBuffer) - n,
             ",fmt:%.1f,flc:%.2f,far:%ld,fl:%.1f,j:%.4f,"
             "cp:%.3f,rp:%.2f,tp:%.2f,"
             "ep:%.3f,sp:%.3f,pt:%.1f,"
+            "ta:%.1f,hm:%d,"
             "hs0:%d,hs1:%d,fm:%s,pol:%s",
             force_motor_torque, force_load_cell, (long)force_adc_raw,
             force_limit, (float)m_joules,
             machine_pos_mm, retract_pos, target_pos,
             m_endpoint_mm, m_press_startpoint_mm, m_press_threshold_kg,
+            avg_torque, homed,
             getHomeSensorStateM0() ? 1 : 0, getHomeSensorStateM1() ? 1 : 0,
             m_force_mode, m_polarity);
     }

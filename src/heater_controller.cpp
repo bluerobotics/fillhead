@@ -41,7 +41,7 @@ void HeaterController::setup() {
 void HeaterController::handleCommand(Command cmd, const char* args) {
 	switch (cmd) {
 	case CMD_HEATER_ON:
-		heaterOn();
+		heaterOn(args);
 		break;
 	case CMD_HEATER_OFF:
 		heaterOff();
@@ -58,13 +58,30 @@ void HeaterController::handleCommand(Command cmd, const char* args) {
 	}
 }
 
-void HeaterController::heaterOn() {
-	// This function now enables PID control.
-	if (m_heaterState != HEATER_PID_ACTIVE) {
-		resetPID(); // Reset PID terms before starting
-		m_heaterState = HEATER_PID_ACTIVE;
-		reportEvent(STATUS_PREFIX_DONE, "HEATER_ON: PID control activated.");
+void HeaterController::heaterOn(const char* args) {
+	if (args != NULL && args[0] != '\0') {
+		float newSetpoint = atof(args);
+		if (newSetpoint > 20.0f && newSetpoint < 200.0f) {
+			m_pid_setpoint = newSetpoint;
 		} else {
+			char response[STATUS_MESSAGE_BUFFER_SIZE];
+			snprintf(response, sizeof(response), "Invalid setpoint %.1f C. Must be between 20 and 200 C. Heater NOT activated.", newSetpoint);
+			reportEvent(STATUS_PREFIX_ERROR, response);
+			return;
+		}
+	}
+
+	if (m_heaterState != HEATER_PID_ACTIVE) {
+		resetPID();
+		m_heaterState = HEATER_PID_ACTIVE;
+		char response[STATUS_MESSAGE_BUFFER_SIZE];
+		snprintf(response, sizeof(response), "HEATER_ON: PID control activated. Setpoint=%.1f C.", m_pid_setpoint);
+		reportEvent(STATUS_PREFIX_DONE, response);
+	} else if (args != NULL && args[0] != '\0') {
+		char response[STATUS_MESSAGE_BUFFER_SIZE];
+		snprintf(response, sizeof(response), "HEATER_ON: Setpoint updated to %.1f C. PID remains active.", m_pid_setpoint);
+		reportEvent(STATUS_PREFIX_DONE, response);
+	} else {
 		reportEvent(STATUS_PREFIX_INFO, "HEATER_ON ignored: PID was already active.");
 	}
 }

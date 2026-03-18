@@ -133,8 +133,8 @@
 // --- Motors ---
 #define MOTOR_INJECTOR_A                ConnectorM0 ///< Primary injector motor.
 #define MOTOR_INJECTOR_B                ConnectorM1 ///< Secondary, ganged injector motor.
-#define MOTOR_VACUUM_VALVE              ConnectorM2 ///< Motor for the pinch valve on the vacuum side.
-#define MOTOR_INJECTION_VALVE           ConnectorM3 ///< Motor for the pinch valve on the injection side.
+#define MOTOR_VACUUM_VALVE              ConnectorM3 ///< Motor for the pinch valve on the vacuum side.
+#define MOTOR_INJECTION_VALVE           ConnectorM2 ///< Motor for the pinch valve on the injection side.
 
 // --- Analog Sensors ---
 #define PIN_THERMOCOUPLE                ConnectorA12 ///< Analog input for the heater thermocouple.
@@ -156,8 +156,8 @@
 // Sensor PN: 326161-0053
 #define HOME_SENSOR_M0                  ConnectorDI7 ///< Motor A (M0) home sensor on DI7.
 #define HOME_SENSOR_M1                  ConnectorDI6 ///< Motor B (M1) home sensor on DI6.
-#define HOME_SENSOR_M2                  ConnectorDI8 ///< Vacuum pinch valve (M2) home sensor on DI8.
-#define HOME_SENSOR_M3                  ConnectorA9  ///< Injection pinch valve (M3) home sensor on A9.
+#define HOME_SENSOR_M2                  ConnectorDI8 ///< Vacuum pinch valve home sensor on DI8 (used by injection valve on M2 after port swap).
+#define HOME_SENSOR_M3                  ConnectorA9  ///< Injection pinch valve home sensor on A9 (used by vacuum valve on M3 after port swap).
 #define HOME_SENSOR_ACTIVE_STATE        true         ///< true = sensor outputs HIGH when triggered (active high).
 #define HOME_SENSOR_FILTER_MS           2            ///< Debounce filter length in milliseconds for home sensors.
 /** @} */
@@ -304,7 +304,7 @@
  * @name Pinch Valve Operation Defaults
  * @{
  */
-#define PINCH_VALVE_PINCH_TORQUE_PERCENT    75.0f     ///< Target torque (%) for closing the valve during normal operation.
+#define PINCH_VALVE_PINCH_TORQUE_PERCENT    10.0f     ///< Target torque (%) for closing the valve during normal operation.
 #define PINCH_VALVE_PINCH_VEL_MMS           2.0f      ///< Speed (mm/s) for the closing (pinching) move.
 #define PINCH_VALVE_OPEN_VEL_MMS            10.0f     ///< Speed (mm/s) for the opening move (returning to the homed position).
 #define PINCH_VALVE_OPEN_ACCEL_MMSS         50.0f     ///< Acceleration (mm/s^2) for the opening move.

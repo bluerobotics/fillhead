@@ -74,7 +74,8 @@
             "2": "settling",
             "3": "leak testing",
             "4": "on",
-            "5": "error"
+            "5": "ramping",
+            "6": "error"
         },
         "help": "Current vacuum system operation state",
         "gui_var": "fillhead_vacuum_state_var"

@@ -112,6 +112,9 @@ const char* getCommandParams(const char* cmdStr, Command cmd) {
         case CMD_SET_VACUUM_TIMEOUT_S: return cmdStr + strlen(CMD_STR_SET_VACUUM_TIMEOUT_S);
         case CMD_SET_LEAK_TEST_DELTA: return cmdStr + strlen(CMD_STR_SET_LEAK_TEST_DELTA);
         case CMD_SET_LEAK_TEST_DURATION_S: return cmdStr + strlen(CMD_STR_SET_LEAK_TEST_DURATION_S);
+        case CMD_VACUUM_ON:               return cmdStr + strlen(CMD_STR_VACUUM_ON);
+        case CMD_HEATER_ON:               return cmdStr + strlen(CMD_STR_HEATER_ON);
+        case CMD_VACUUM_LEAK_TEST:        return cmdStr + strlen(CMD_STR_VACUUM_LEAK_TEST);
         default:
             return NULL;
     }

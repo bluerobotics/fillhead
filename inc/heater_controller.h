@@ -122,8 +122,9 @@ private:
 
 	/**
 	 * @brief Turns the heater on and enables the PID control loop.
+	 * @param args Optional setpoint in Celsius. If NULL/empty, uses current setpoint.
 	 */
-	void heaterOn();
+	void heaterOn(const char* args);
 
 	/**
 	 * @brief Turns the heater off, disables the PID control loop, and resets PID variables.

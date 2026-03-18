@@ -54,9 +54,9 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 	}
 
 	switch(cmd) {
-		case CMD_VACUUM_ON:                 vacuumOn(); break;
+		case CMD_VACUUM_ON:                 vacuumOn(args); break;
 		case CMD_VACUUM_OFF:                vacuumOff(); break;
-		case CMD_VACUUM_LEAK_TEST:          leakTest(); break;
+		case CMD_VACUUM_LEAK_TEST:          leakTest(args); break;
 		case CMD_SET_VACUUM_TARGET:         setTarget(args); break;
 		case CMD_SET_VACUUM_TIMEOUT_S:      setTimeout(args); break;
 		case CMD_SET_LEAK_TEST_DELTA:       setLeakDelta(args); break;
@@ -67,11 +67,27 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 	}
 }
 
-void VacuumController::vacuumOn() {
-	reportEvent(STATUS_PREFIX_START, "VACUUM_ON received. Pump is now running.");
-	m_state = VACUUM_ON;
-	PIN_VACUUM_RELAY.State(true);
-	PIN_VACUUM_VALVE_RELAY.State(true); // Assuming valve should be open
+void VacuumController::vacuumOn(const char* args) {
+	if (args != NULL && args[0] != '\0') {
+		float target = std::atof(args);
+		if (target <= 0.0f && target > -15.0f) {
+			m_targetPsig = target;
+			char msg[STATUS_MESSAGE_BUFFER_SIZE];
+			snprintf(msg, sizeof(msg), "vacuum_on received with target=%.2f PSIG. Ramping...", target);
+			reportEvent(STATUS_PREFIX_START, msg);
+			m_state = VACUUM_RAMP;
+			m_stateStartTimeMs = Milliseconds();
+			PIN_VACUUM_RELAY.State(true);
+			PIN_VACUUM_VALVE_RELAY.State(true);
+		} else {
+			reportEvent(STATUS_PREFIX_ERROR, "Invalid vacuum target. Must be between 0 and -15 PSIG.");
+		}
+	} else {
+		reportEvent(STATUS_PREFIX_START, "VACUUM_ON received. Pump is now running.");
+		m_state = VACUUM_ON;
+		PIN_VACUUM_RELAY.State(true);
+		PIN_VACUUM_VALVE_RELAY.State(true);
+	}
 }
 
 void VacuumController::vacuumOff() {
@@ -83,12 +99,38 @@ void VacuumController::vacuumOff() {
 	reportEvent(STATUS_PREFIX_DONE, "vacuum_off complete.");
 }
 
-void VacuumController::leakTest() {
-	reportEvent(STATUS_PREFIX_START, "LEAK_TEST initiated.");
+void VacuumController::leakTest(const char* args) {
+	float delta = m_leakTestDeltaPsig;
+	float duration = m_leakTestDurationSec;
+	if (args != NULL && args[0] != '\0') {
+		float parsedDelta, parsedDuration;
+		int parsed = sscanf(args, "%f %f", &parsedDelta, &parsedDuration);
+		if (parsed >= 1) {
+			if (parsedDelta > 0.0f && parsedDelta < 5.0f) {
+				delta = parsedDelta;
+			} else {
+				reportEvent(STATUS_PREFIX_ERROR, "Invalid leak delta. Must be between 0 and 5 PSI.");
+				return;
+			}
+		}
+		if (parsed >= 2) {
+			if (parsedDuration >= 1.0f && parsedDuration <= 120.0f) {
+				duration = parsedDuration;
+			} else {
+				reportEvent(STATUS_PREFIX_ERROR, "Invalid leak duration. Must be between 1.0 and 120.0 seconds.");
+				return;
+			}
+		}
+	}
+	m_leakTestDeltaPsig = delta;
+	m_leakTestDurationSec = duration;
+	char msg[STATUS_MESSAGE_BUFFER_SIZE];
+	snprintf(msg, sizeof(msg), "LEAK_TEST initiated. Delta=%.3f PSI, Duration=%.1f s.", m_leakTestDeltaPsig, m_leakTestDurationSec);
+	reportEvent(STATUS_PREFIX_START, msg);
 	m_state = VACUUM_PULLDOWN;
 	m_stateStartTimeMs = Milliseconds();
 	PIN_VACUUM_RELAY.State(true);
-	PIN_VACUUM_VALVE_RELAY.State(true); // Open valve to pull vacuum
+	PIN_VACUUM_VALVE_RELAY.State(true);
 }
 
 void VacuumController::updateState() {
@@ -99,18 +141,30 @@ void VacuumController::updateState() {
 
 	float elapsed_sec = (float)(Milliseconds() - m_stateStartTimeMs) / 1000.0f;
 
-	if (m_state == VACUUM_PULLDOWN) {
+	if (m_state == VACUUM_RAMP) {
+		if (m_vacuumPressurePsig <= m_targetPsig) {
+			resetState();
+			reportEvent(STATUS_PREFIX_DONE, "vacuum_on complete. Target pressure reached.");
+		} else if (elapsed_sec > m_rampTimeoutSec) {
+			m_state = VACUUM_ERROR;
+			PIN_VACUUM_RELAY.State(false);
+			PIN_VACUUM_VALVE_RELAY.State(false);
+			reportEvent(STATUS_PREFIX_ERROR, "vacuum_on FAILED: Did not reach target pressure in time.");
+		}
+	}
+	else if (m_state == VACUUM_PULLDOWN) {
 		if (m_vacuumPressurePsig <= m_targetPsig) {
 			PIN_VACUUM_RELAY.State(false);      // Pump off
 			PIN_VACUUM_VALVE_RELAY.State(false);  // Close valve to seal system
 			reportEvent(STATUS_PREFIX_INFO, "Leak Test: Target reached. Pump off. Settling...");
 			m_state = VACUUM_SETTLING;
 			m_stateStartTimeMs = Milliseconds();
-			} else if (elapsed_sec > m_rampTimeoutSec) {
-			m_state = VACUUM_ERROR;
-			PIN_VACUUM_RELAY.State(false);
-			reportEvent(STATUS_PREFIX_ERROR, "LEAK_TEST FAILED: Did not reach target pressure in time.");
-		}
+		} else if (elapsed_sec > m_rampTimeoutSec) {
+		m_state = VACUUM_ERROR;
+		PIN_VACUUM_RELAY.State(false);
+		PIN_VACUUM_VALVE_RELAY.State(false);
+		reportEvent(STATUS_PREFIX_ERROR, "LEAK_TEST FAILED: Did not reach target pressure in time.");
+	}
 	}
 	else if (m_state == VACUUM_SETTLING) {
 		if (elapsed_sec > VACUUM_SETTLE_TIME_S) {
@@ -229,10 +283,11 @@ bool VacuumController::isBusy() const {
 const char* VacuumController::getState() const {
 	switch (m_state) {
 		case VACUUM_OFF:            return "Off";
+		case VACUUM_RAMP:           return "Ramping";
 		case VACUUM_PULLDOWN:       return "Pulldown";
 		case VACUUM_SETTLING:       return "Settling";
 		case VACUUM_LEAK_TESTING:   return "Leak Test";
-		case VACUUM_ON:    return "On";
+		case VACUUM_ON:             return "On";
 		case VACUUM_ERROR:          return "Error";
 		default:                    return "Unknown";
 	}

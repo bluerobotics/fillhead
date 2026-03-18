@@ -302,46 +302,38 @@ void CommsController::processTxQueue() {
 		g_watchdogBreadcrumb = WD_BREADCRUMB_TX_QUEUE_USB;
 #endif
 		if (m_usbHostConnected) {
-			const int CHUNK_SIZE = 50;
 			int msgLen = (int)strlen(msg.buffer);
+			const int USB_STREAM_BLOCK_SIZE = 64;
+			const uint32_t USB_SEND_TIMEOUT_MS = 100;
+			uint32_t sendStart = Milliseconds();
+			int offset = 0;
 
-			if (msgLen <= CHUNK_SIZE) {
-				if (usbAvail >= msgLen + 1) {
-					ConnectorUsb.Send(msg.buffer);
-					ConnectorUsb.Send("\n");
-				}
-			} else {
-				int totalChunks = (msgLen + CHUNK_SIZE - 1) / CHUNK_SIZE;
-				const uint32_t MAX_TOTAL_CHUNK_TIME_MS = 100;
-				const uint32_t CHUNK_TIMEOUT_MS = 3;
-				uint32_t chunkLoopStart = Milliseconds();
+			while (offset < msgLen) {
+				if (Milliseconds() - sendStart > USB_SEND_TIMEOUT_MS) break;
 
-				for (int chunk = 0; chunk < totalChunks; chunk++) {
-					if (Milliseconds() - chunkLoopStart > MAX_TOTAL_CHUNK_TIME_MS) {
-						break;
-					}
-					int offset = chunk * CHUNK_SIZE;
-					int chunkLen = (msgLen - offset > CHUNK_SIZE) ? CHUNK_SIZE : (msgLen - offset);
+				int avail = ConnectorUsb.AvailableForWrite();
+				if (avail <= 0) continue;
 
-					char chunkMsg[80];
-					snprintf(chunkMsg, sizeof(chunkMsg), "CHUNK_%d/%d:", chunk + 1, totalChunks);
-					int headerLen = (int)strlen(chunkMsg);
+				int remaining = msgLen - offset;
+				int toSend = remaining;
+				if (toSend > avail) toSend = avail;
+				if (toSend > USB_STREAM_BLOCK_SIZE) toSend = USB_STREAM_BLOCK_SIZE;
 
-					strncat(chunkMsg, msg.buffer + offset, chunkLen);
-					chunkMsg[headerLen + chunkLen] = '\0';
+				char buf[USB_STREAM_BLOCK_SIZE + 1];
+				memcpy(buf, msg.buffer + offset, toSend);
+				buf[toSend] = '\0';
+				ConnectorUsb.Send(buf);
+				offset += toSend;
+			}
 
-					uint32_t startWait = Milliseconds();
-					while (ConnectorUsb.AvailableForWrite() < (int)strlen(chunkMsg) + 1) {
-						if (Milliseconds() - startWait > CHUNK_TIMEOUT_MS) {
-							break;
-						}
-					}
-
-					if (ConnectorUsb.AvailableForWrite() >= (int)strlen(chunkMsg) + 1) {
-						ConnectorUsb.Send(chunkMsg);
-						ConnectorUsb.Send("\n");
-					}
-				}
+			// Always terminate the line so partial messages don't
+			// concatenate with subsequent ones.
+			uint32_t nlStart = Milliseconds();
+			while (ConnectorUsb.AvailableForWrite() < 1) {
+				if (Milliseconds() - nlStart > 10) break;
+			}
+			if (ConnectorUsb.AvailableForWrite() >= 1) {
+				ConnectorUsb.Send("\n");
 			}
 		}
 	}

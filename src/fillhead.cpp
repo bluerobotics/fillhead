@@ -68,8 +68,8 @@ Fillhead::Fillhead() :
     m_comms(),
     // Pass the comms pointer to all sub-controllers that need it.
     m_injector(&MOTOR_INJECTOR_A, &MOTOR_INJECTOR_B, this),
-    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, HOME_SENSOR_M3, NVM_SLOT_INJ_VALVE_HOME_ON_BOOT, this),
-    m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, HOME_SENSOR_M2, NVM_SLOT_VAC_VALVE_HOME_ON_BOOT, this),
+    m_injectorValve("inj_valve", &MOTOR_INJECTION_VALVE, HOME_SENSOR_M2, NVM_SLOT_INJ_VALVE_HOME_ON_BOOT, this),
+    m_vacuumValve("vac_valve", &MOTOR_VACUUM_VALVE, HOME_SENSOR_M3, NVM_SLOT_VAC_VALVE_HOME_ON_BOOT, this),
     m_heater(this),
     m_vacuum(this)
 {

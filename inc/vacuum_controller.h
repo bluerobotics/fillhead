@@ -22,12 +22,13 @@ class Fillhead; // Forward declaration
  * @brief Defines the operational state of the vacuum system.
  */
 enum VacuumState : uint8_t {
-	VACUUM_OFF,             ///< The vacuum pump and valve are off. The system is idle.
-	VACUUM_PULLDOWN,        ///< The pump is on, pulling down to the target pressure.
-	VACUUM_SETTLING,        ///< The pump is off, allowing pressure to stabilize before a leak test.
-	VACUUM_LEAK_TESTING,    ///< The system is holding vacuum and monitoring for pressure changes to detect leaks.
-	VACUUM_ON,              ///< The pump is on and will run continuously until a `VACUUM_OFF` command is received.
-	VACUUM_ERROR            ///< The system failed to reach target pressure or failed a leak test.
+	VACUUM_OFF,             ///< 0 — The vacuum pump and valve are off. The system is idle.
+	VACUUM_PULLDOWN,        ///< 1 — The pump is on, pulling down to the target pressure for a leak test.
+	VACUUM_SETTLING,        ///< 2 — The pump is off, allowing pressure to stabilize before a leak test.
+	VACUUM_LEAK_TESTING,    ///< 3 — The system is holding vacuum and monitoring for pressure changes to detect leaks.
+	VACUUM_ON,              ///< 4 — The pump is on and will run continuously until a `VACUUM_OFF` command is received.
+	VACUUM_RAMP,            ///< 5 — The pump is on, ramping to a user-specified target pressure, then auto-off.
+	VACUUM_ERROR            ///< 6 — The system failed to reach target pressure or failed a leak test.
 };
 
 /**
@@ -126,9 +127,10 @@ class VacuumController {
 	char m_telemetryBuffer[256];        ///< A buffer to store the formatted telemetry string.
 
 	/**
-	 * @brief Activates the vacuum pump relay.
+	 * @brief Activates the vacuum pump relay, optionally ramping to a target pressure.
+	 * @param args Optional target pressure in PSIG. If NULL/empty, pump runs indefinitely.
 	 */
-	void vacuumOn();
+	void vacuumOn(const char* args);
 
 	/**
 	 * @brief Deactivates the vacuum pump relay.
@@ -137,8 +139,9 @@ class VacuumController {
 
 	/**
 	 * @brief Initiates a leak test sequence by transitioning to the `VACUUM_PULLDOWN` state.
+	 * @param args Optional delta and duration overrides (e.g., "0.5 10").
 	 */
-	void leakTest();
+	void leakTest(const char* args);
 
 	/**
 	 * @brief Sets the target vacuum pressure from a string argument.

@@ -44,7 +44,7 @@
  * @{
  */
 #define STATUS_MESSAGE_BUFFER_SIZE      256       ///< Standard buffer size for composing status and error messages.
-#define FIRMWARE_VERSION                "0.4.0"
+#define FIRMWARE_VERSION                "0.5.0"
 /** @} */
 
 //==================================================================================================

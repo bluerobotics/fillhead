@@ -762,7 +762,7 @@ void Injector::updateState() {
 
                 if (isStarting && elapsed > MOVE_START_TIMEOUT_MS) {
                     if (m_activeMoveCommand) {
-                        reportEvent(STATUS_PREFIX_ERROR, "Move timeout: Motor failed to start");
+                        reportEvent(STATUS_PREFIX_ERROR, "Move timeout: Motor failed to start.");
                     }
                     finalizeAndResetActiveMove(false);
                     m_state = STATE_STANDBY;
@@ -1087,7 +1087,7 @@ void Injector::cartridgeHome() {
 
 void Injector::moveToCartridgeHome() {
     if (!m_homingCartridgeDone) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Cartridge not homed.");
+        reportEvent(STATUS_PREFIX_ERROR, "Cartridge not homed.");
         return;
     }
 
@@ -1105,13 +1105,13 @@ void Injector::moveToCartridgeHome() {
 
 void Injector::moveToCartridgeRetract(const char* args) {
     if (!m_homingCartridgeDone) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Cartridge not homed.");
+        reportEvent(STATUS_PREFIX_ERROR, "Cartridge not homed.");
         return;
     }
 
     float offset_mm = 0.0f;
     if (std::sscanf(args, "%f", &offset_mm) != 1 || offset_mm < 0) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid offset for MOVE_TO_CARTRIDGE_RETRACT.");
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid offset for MOVE_TO_CARTRIDGE_RETRACT.");
         return;
     }
 
@@ -1144,7 +1144,7 @@ void Injector::initiateInjectMove(const char* args) {
         float steps_per_ml = STEPS_PER_MM_INJECTOR / ml_per_mm;
 
         if (torque_percent <= 0 || torque_percent > 100) torque_percent = m_feedDefaultTorquePercent;
-        if (volume_ml <= 0) { reportEvent(STATUS_PREFIX_ERROR, "Error: Inject volume must be positive."); return; }
+        if (volume_ml <= 0) { reportEvent(STATUS_PREFIX_ERROR, "Inject volume must be positive."); return; }
         if (speed_ml_s <= 0) speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
 
         fullyResetActiveDispenseOperation();
@@ -1237,7 +1237,7 @@ void Injector::cancelOperation() {
 
 void Injector::moveAbsolute(const char* args) {
     if (!m_homingMachineDone) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before absolute moves.");
+        reportEvent(STATUS_PREFIX_ERROR, "Must home before absolute moves.");
         return;
     }
 
@@ -1248,7 +1248,7 @@ void Injector::moveAbsolute(const char* args) {
 
     int parsed = std::sscanf(args, "%f %f %f %31s", &position_mm, &speed_mms, &force_kg, force_action);
     if (parsed < 1) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid parameters for MOVE_ABS. Need at least position.");
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid parameters for MOVE_ABS. Need at least position.");
         return;
     }
 
@@ -1293,11 +1293,11 @@ void Injector::moveAbsolute(const char* args) {
     if (force_kg > 0.0f) {
         if (strcmp(m_force_mode, "motor_torque") == 0) {
             if (force_kg < 50.0f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 50 kg in motor_torque mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be >= 50 kg in motor_torque mode.");
                 return;
             }
             if (force_kg > 2000.0f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 2000 kg in motor_torque mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be <= 2000 kg in motor_torque mode.");
                 return;
             }
             m_torqueLimit = m_motor_torque_scale * force_kg + m_motor_torque_offset;
@@ -1307,11 +1307,11 @@ void Injector::moveAbsolute(const char* args) {
             reportEvent(STATUS_PREFIX_INFO, torque_msg);
         } else {
             if (force_kg < 0.2f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 0.2 kg in load_cell mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be >= 0.2 kg in load_cell mode.");
                 return;
             }
             if (force_kg > 1000.0f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 1000 kg in load_cell mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be <= 1000 kg in load_cell mode.");
                 return;
             }
             m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
@@ -1359,7 +1359,7 @@ void Injector::moveAbsolute(const char* args) {
 
 void Injector::moveIncremental(const char* args) {
     if (!m_homingMachineDone) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before incremental moves.");
+        reportEvent(STATUS_PREFIX_ERROR, "Must home before incremental moves.");
         return;
     }
 
@@ -1370,7 +1370,7 @@ void Injector::moveIncremental(const char* args) {
 
     int parsed = std::sscanf(args, "%f %f %f %31s", &distance_mm, &speed_mms, &force_kg, force_action);
     if (parsed < 1) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid parameters for MOVE_INC. Need at least distance.");
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid parameters for MOVE_INC. Need at least distance.");
         return;
     }
 
@@ -1411,11 +1411,11 @@ void Injector::moveIncremental(const char* args) {
     if (force_kg > 0.0f) {
         if (strcmp(m_force_mode, "motor_torque") == 0) {
             if (force_kg < 50.0f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 50 kg in motor_torque mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be >= 50 kg in motor_torque mode.");
                 return;
             }
             if (force_kg > 2000.0f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 2000 kg in motor_torque mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be <= 2000 kg in motor_torque mode.");
                 return;
             }
             m_torqueLimit = m_motor_torque_scale * force_kg + m_motor_torque_offset;
@@ -1425,11 +1425,11 @@ void Injector::moveIncremental(const char* args) {
             reportEvent(STATUS_PREFIX_INFO, torque_msg);
         } else {
             if (force_kg < 0.2f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 0.2 kg in load_cell mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be >= 0.2 kg in load_cell mode.");
                 return;
             }
             if (force_kg > 1000.0f) {
-                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 1000 kg in load_cell mode.");
+                reportEvent(STATUS_PREFIX_ERROR, "Force must be <= 1000 kg in load_cell mode.");
                 return;
             }
             m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
@@ -1477,7 +1477,7 @@ void Injector::moveIncremental(const char* args) {
 
 void Injector::setRetract(const char* args) {
     if (!m_homingMachineDone) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before setting retract position.");
+        reportEvent(STATUS_PREFIX_ERROR, "Must home before setting retract position.");
         return;
     }
 
@@ -1485,13 +1485,13 @@ void Injector::setRetract(const char* args) {
     float speed_mms = m_retractSpeedMms;
     int parsed = std::sscanf(args, "%f %f", &position_mm, &speed_mms);
     if (parsed < 1) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid position for SET_RETRACT.");
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid position for SET_RETRACT.");
         return;
     }
 
     if (parsed >= 2) {
         if (speed_mms <= 0.0f) {
-            reportEvent(STATUS_PREFIX_ERROR, "Error: Retract speed must be > 0.");
+            reportEvent(STATUS_PREFIX_ERROR, "Retract speed must be > 0.");
             return;
         }
         if (speed_mms > 100.0f) {
@@ -1525,14 +1525,14 @@ void Injector::setRetract(const char* args) {
 
 void Injector::retract(const char* args) {
     if (!m_homingMachineDone) {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before moving to retract position.");
+        reportEvent(STATUS_PREFIX_ERROR, "Must home before moving to retract position.");
         return;
     }
     if (m_retractReferenceSteps == LONG_MIN) {
         char dbg[128];
         snprintf(dbg, sizeof(dbg), "Retract debug: reference steps not set (home=%ld)", m_machineHomeReferenceSteps);
         reportEvent(STATUS_PREFIX_INFO, dbg);
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Retract position not set. Use SET_RETRACT first.");
+        reportEvent(STATUS_PREFIX_ERROR, "Retract position not set. Use SET_RETRACT first.");
         return;
     }
 
@@ -1540,7 +1540,7 @@ void Injector::retract(const char* args) {
     if (args && args[0] != '\0') {
         int parsed = std::sscanf(args, "%f", &speed_mms);
         if (parsed < 1) {
-            reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid speed for RETRACT.");
+            reportEvent(STATUS_PREFIX_ERROR, "Invalid speed for RETRACT.");
             return;
         }
     }
@@ -1708,7 +1708,7 @@ void Injector::setTorqueOffset(const char* args) {
         snprintf(msg, sizeof(msg), "Torque offset set to %.2f%%", offset);
         reportEvent(STATUS_PREFIX_INFO, msg);
     } else {
-        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid torque offset value.");
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid torque offset value.");
     }
 }
 
@@ -2018,7 +2018,7 @@ void Injector::handleFeedLimitReached(const char* limit_type, float limit_value)
 
     if (strcmp(action, "retract") == 0 || strcmp(action, "abort") == 0) {
         if (strcmp(action, "abort") == 0) {
-            reportEvent(STATUS_PREFIX_ERROR, "Injection aborted due to force limit");
+            reportEvent(STATUS_PREFIX_ERROR, "Injection aborted due to force limit.");
         } else {
             reportEvent(STATUS_PREFIX_INFO, "Inject force limit reached, retracting...");
         }
@@ -2296,9 +2296,9 @@ const char* Injector::getTelemetryString() {
     if (n > 0 && (size_t)n < sizeof(m_telemetryBuffer) - 1) {
         int homed = (m_homingMachineDone && m_homingCartridgeDone) ? 1 : 0;
         std::snprintf(m_telemetryBuffer + n, sizeof(m_telemetryBuffer) - n,
-            ",fmt:%.1f,flc:%.2f,far:%ld,fl:%.1f,j:%.4f,"
+            ",fmt:%.2f,flc:%.2f,far:%ld,fl:%.1f,j:%.4f,"
             "cp:%.3f,rp:%.2f,tp:%.2f,"
-            "ep:%.3f,sp:%.3f,pt:%.1f,"
+            "ep:%.3f,sp:%.3f,pt:%.2f,"
             "ta:%.1f,hm:%d,"
             "hs0:%d,hs1:%d,fm:%s,pol:%s",
             force_motor_torque, force_load_cell, (long)force_adc_raw,

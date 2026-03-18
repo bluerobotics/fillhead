@@ -271,7 +271,7 @@
         "default": 0.0,
         "precision": 3,
         "firmware_key": "j",
-        "help": "Energy expended during current move (force x distance integrated at 50Hz)",
+        "help": "Energy expended during current move (force × distance integrated at 50Hz)",
         "gui_var": "fillhead_joules_var"
     },
     "enabled0": {
@@ -376,7 +376,7 @@
             "0": "inactive",
             "1": "active"
         },
-        "help": "Motor A (M0) home sensor state",
+        "help": "Motor A (M0) home sensor state (DI7)",
         "gui_var": "fillhead_home_sensor_m0_var"
     },
     "home_sensor_m1": {
@@ -387,7 +387,7 @@
             "0": "inactive",
             "1": "active"
         },
-        "help": "Motor B (M1) home sensor state",
+        "help": "Motor B (M1) home sensor state (DI6)",
         "gui_var": "fillhead_home_sensor_m1_var"
     },
     "polarity": {

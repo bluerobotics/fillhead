@@ -521,7 +521,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
 
     if (command_enum == CMD_INJECT) {
         if (!m_injectorValve.isHomed() || !m_injectorValve.isOpen()) {
-            reportEvent(STATUS_PREFIX_ERROR, "Injection command ignored: Injector valve is not homed and open.");
+            reportEvent(STATUS_PREFIX_ERROR, "Injection command ignored: Injection valve must be homed and open.");
             return;
         }
     }
@@ -608,10 +608,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
                     reportEvent(STATUS_PREFIX_DONE, "injection_valve_home_on_boot");
                 } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'");
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for injection_valve_home_on_boot");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for injection_valve_home_on_boot.");
             }
             break;
         }
@@ -624,10 +624,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
                     reportEvent(STATUS_PREFIX_DONE, "vacuum_valve_home_on_boot");
                 } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'");
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for vacuum_valve_home_on_boot");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for vacuum_valve_home_on_boot.");
             }
             break;
         }
@@ -661,10 +661,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
                     reportEvent(STATUS_PREFIX_DONE, "set_force_mode");
                 } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid mode. Use 'motor_torque' or 'load_cell'");
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid mode. Use 'motor_torque' or 'load_cell'.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_mode");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_mode.");
             }
             break;
         }
@@ -685,7 +685,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
                 }
                 reportEvent(STATUS_PREFIX_DONE, "set_force_offset");
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_offset");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_offset.");
             }
             break;
         }
@@ -706,7 +706,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
                 }
                 reportEvent(STATUS_PREFIX_DONE, "set_force_scale");
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_scale");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_scale.");
             }
             break;
         }
@@ -764,10 +764,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
                     reportEvent(STATUS_PREFIX_DONE, "set_polarity");
                 } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid polarity. Use 'normal' or 'inverted'");
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid polarity. Use 'normal' or 'inverted'.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_polarity");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_polarity.");
             }
             break;
         }
@@ -780,10 +780,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
                     reportEvent(STATUS_PREFIX_DONE, "home_on_boot");
                 } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'");
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for home_on_boot");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for home_on_boot.");
             }
             break;
         }
@@ -796,10 +796,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
                     reportEvent(STATUS_PREFIX_DONE, "set_press_threshold");
                 } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid threshold. Must be between 0.1 and 50.0 kg");
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid threshold. Must be between 0.1 and 50.0 kg.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_press_threshold");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_press_threshold.");
             }
             break;
         }

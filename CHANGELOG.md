@@ -2,6 +2,19 @@
 
 All notable changes to the Fillhead firmware will be documented in this file.
 
+## [0.5.0] - 2026-03-18
+
+### Message Cleanup
+- Fixed telemetry precision for `force_motor_torque` (%.1f -> %.2f) and `press_threshold` (%.1f -> %.2f) to match Pressboi wire format
+- Removed redundant "Error:" prefix from 23 injector error messages (was producing triple-prefixed `FILLHEAD_ERROR: Injector: Error: ...` on wire)
+- Added trailing periods to 18 error messages across `fillhead.cpp`, `injector_controller.cpp`, and `heater_controller.cpp` for consistency
+- Fixed ambiguous valve gate message: "Injector valve is not homed and open" -> "Injection valve must be homed and open"
+
+### Definition Updates
+- Fixed `telemetry.json`: joules help text now uses × (multiplication sign) matching Pressboi; added pin references (DI7)/(DI6) to home sensor help text
+
+---
+
 ## [0.4.0] - 2026-03-18
 
 ### Pressboi Parity (Telemetry)

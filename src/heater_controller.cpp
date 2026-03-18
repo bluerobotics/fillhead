@@ -87,7 +87,7 @@ void HeaterController::setGains(const char* args) {
 		reportEvent(STATUS_PREFIX_DONE, response);
 		resetPID(); // Reset integral and derivative terms after changing gains
 		} else {
-		reportEvent(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D");
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D.");
 	}
 }
 

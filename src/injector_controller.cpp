@@ -1183,7 +1183,7 @@ void Injector::setCartridgeMlPerMm(const char* args) {
         NvmManager &nvmMgr = NvmManager::Instance();
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_CARTRIDGE_ML_PER_MM), (int32_t)(ratio * 10000.0f));
         char msg[128];
-        snprintf(msg, sizeof(msg), "Cartridge ratio set to %.4f ml/mm and saved to NVM", ratio);
+        snprintf(msg, sizeof(msg), "set_cartridge_ml_per_mm complete. Ratio=%.4f ml/mm", ratio);
         reportEvent(STATUS_PREFIX_DONE, msg);
     } else {
         reportEvent(STATUS_PREFIX_ERROR, "Invalid set_cartridge_ml_per_mm format. Usage: set_cartridge_ml_per_mm <ml_per_mm>");

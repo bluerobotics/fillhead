@@ -33,6 +33,7 @@ PinchValve::PinchValve(const char* name, MotorDriver* motor, DigitalIn& homeSens
     m_torqueLimit(0.0f),
     m_smoothedTorque(0.0f),
     m_firstTorqueReading(true),
+    m_activeCommandStr(nullptr),
     m_homingDistanceSteps(0),
     m_homingBackoffSteps(0),
     m_homingRapidSps(0),
@@ -178,8 +179,9 @@ void PinchValve::updateState() {
                     m_isHomed = true;
                     m_state = VALVE_OPEN;
                     m_homingPhase = HOMING_PHASE_IDLE;
-                    char msg[64];
-                    snprintf(msg, sizeof(msg), "%s homing complete. Valve is OPEN.", m_name);
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "%s complete. Valve is OPEN.",
+                             m_activeCommandStr ? m_activeCommandStr : m_name);
                     reportEvent(STATUS_PREFIX_DONE, msg);
                     break;
                 }
@@ -215,14 +217,18 @@ void PinchValve::updateState() {
                             reportEvent(STATUS_PREFIX_ERROR, "Open failed: Torque limit hit unexpectedly.");
                         } else if (!m_motor->StatusReg().bit.StepsActive) {
                             m_state = VALVE_OPEN;
-                            reportEvent(STATUS_PREFIX_DONE, "Open complete.");
+                            char doneMsg[128];
+                            snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
+                                     m_activeCommandStr ? m_activeCommandStr : "open");
+                            reportEvent(STATUS_PREFIX_DONE, doneMsg);
                         }
                     } else if (m_moveType == MOVE_TYPE_CLOSE) {
                         if (checkTorqueLimit()) {
                             abort();
                             m_state = VALVE_CLOSED;
-                            char msg[64];
-                            snprintf(msg, sizeof(msg), "%s closed.", m_name);
+                            char msg[128];
+                            snprintf(msg, sizeof(msg), "%s complete.",
+                                     m_activeCommandStr ? m_activeCommandStr : "close");
                             reportEvent(STATUS_PREFIX_DONE, msg);
                         } else if (!m_motor->StatusReg().bit.StepsActive) {
                             m_state = VALVE_ERROR;
@@ -262,7 +268,10 @@ void PinchValve::updateState() {
                     } else if (!m_motor->StatusReg().bit.StepsActive) {
                         m_state = m_isHomed ? VALVE_OPEN : VALVE_NOT_HOMED;
                         m_opPhase = PHASE_IDLE;
-                        reportEvent(STATUS_PREFIX_DONE, "Jog complete.");
+                        char doneMsg[128];
+                        snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
+                                 m_activeCommandStr ? m_activeCommandStr : "jog");
+                        reportEvent(STATUS_PREFIX_DONE, doneMsg);
                     }
                     break;
                 default:
@@ -303,19 +312,35 @@ void PinchValve::handleCommand(Command cmd, const char* args) {
 
     switch(cmd) {
         case CMD_INJECTION_VALVE_HOME:
+            m_activeCommandStr = CMD_STR_INJECTION_VALVE_HOME;
+            home();
+            break;
         case CMD_VACUUM_VALVE_HOME:
+            m_activeCommandStr = CMD_STR_VACUUM_VALVE_HOME;
             home();
             break;
         case CMD_INJECTION_VALVE_OPEN:
+            m_activeCommandStr = CMD_STR_INJECTION_VALVE_OPEN;
+            open();
+            break;
         case CMD_VACUUM_VALVE_OPEN:
+            m_activeCommandStr = CMD_STR_VACUUM_VALVE_OPEN;
             open();
             break;
         case CMD_INJECTION_VALVE_CLOSE:
+            m_activeCommandStr = CMD_STR_INJECTION_VALVE_CLOSE;
+            close();
+            break;
         case CMD_VACUUM_VALVE_CLOSE:
+            m_activeCommandStr = CMD_STR_VACUUM_VALVE_CLOSE;
             close();
             break;
         case CMD_INJECTION_VALVE_JOG:
+            m_activeCommandStr = CMD_STR_INJECTION_VALVE_JOG;
+            jog(args);
+            break;
         case CMD_VACUUM_VALVE_JOG:
+            m_activeCommandStr = CMD_STR_VACUUM_VALVE_JOG;
             jog(args);
             break;
         default:

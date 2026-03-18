@@ -83,9 +83,9 @@ void HeaterController::heaterOff() {
 void HeaterController::setGains(const char* args) {
 	if (sscanf(args, "%f %f %f", &m_pid_kp, &m_pid_ki, &m_pid_kd) == 3) {
 		char response[128];
-		snprintf(response, sizeof(response), "Heater gains set: P=%.2f, I=%.2f, D=%.2f", m_pid_kp, m_pid_ki, m_pid_kd);
+		snprintf(response, sizeof(response), "set_heater_gains complete. P=%.2f, I=%.2f, D=%.2f", m_pid_kp, m_pid_ki, m_pid_kd);
 		reportEvent(STATUS_PREFIX_DONE, response);
-		resetPID(); // Reset integral and derivative terms after changing gains
+		resetPID();
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D.");
 	}
@@ -93,10 +93,10 @@ void HeaterController::setGains(const char* args) {
 
 void HeaterController::setSetpoint(const char* args) {
 	float newSetpoint = atof(args);
-	if (newSetpoint > 20.0f && newSetpoint < 200.0f) { // Basic safety check
+	if (newSetpoint > 20.0f && newSetpoint < 200.0f) {
 		m_pid_setpoint = newSetpoint;
 		char response[128];
-		snprintf(response, sizeof(response), "Heater setpoint changed to %.1f C", m_pid_setpoint);
+		snprintf(response, sizeof(response), "set_heater_setpoint complete. Setpoint=%.1f C", m_pid_setpoint);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid setpoint. Must be between 20 and 200 C.");

@@ -80,7 +80,7 @@ void VacuumController::vacuumOff() {
 		return;
 	}
 	resetState();
-	reportEvent(STATUS_PREFIX_DONE, "VACUUM_OFF complete.");
+	reportEvent(STATUS_PREFIX_DONE, "vacuum_off complete.");
 }
 
 void VacuumController::leakTest() {
@@ -131,7 +131,7 @@ void VacuumController::updateState() {
 			reportEvent(STATUS_PREFIX_ERROR, errorMsg);
 			} else if (elapsed_sec > m_leakTestDurationSec) {
 			char passMsg[STATUS_MESSAGE_BUFFER_SIZE];
-			snprintf(passMsg, sizeof(passMsg), "LEAK_TEST PASSED. Pressure loss was %.3f PSI.", pressure_delta);
+			snprintf(passMsg, sizeof(passMsg), "vacuum_leak_test complete. PASSED. Pressure loss was %.3f PSI.", pressure_delta);
 			reportEvent(STATUS_PREFIX_DONE, passMsg);
 			resetState();
 		}
@@ -149,7 +149,7 @@ void VacuumController::setTarget(const char* args) {
 	if (val <= 0 && val > -15.0f) {
 		m_targetPsig = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "Vacuum target set to %.2f PSIG.", m_targetPsig);
+		snprintf(response, sizeof(response), "set_vacuum_target complete. Target=%.2f PSIG.", m_targetPsig);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid vacuum target. Must be between 0 and -15.");
@@ -161,7 +161,7 @@ void VacuumController::setTimeout(const char* args) {
 	if (val >= 0.5f && val <= 60.0f) {
 		m_rampTimeoutSec = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "Vacuum ramp timeout set to %.1f seconds.", m_rampTimeoutSec);
+		snprintf(response, sizeof(response), "set_vacuum_timeout_s complete. Timeout=%.1f seconds.", m_rampTimeoutSec);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid timeout. Must be between 0.5 and 60.0 seconds.");
@@ -173,7 +173,7 @@ void VacuumController::setLeakDelta(const char* args) {
 	if (val > 0.0f && val < 5.0f) {
 		m_leakTestDeltaPsig = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "Leak test delta P set to %.3f PSI.", m_leakTestDeltaPsig);
+		snprintf(response, sizeof(response), "set_leak_test_delta complete. Delta=%.3f PSI.", m_leakTestDeltaPsig);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid leak delta. Must be between 0 and 5 PSI.");
@@ -185,7 +185,7 @@ void VacuumController::setLeakDuration(const char* args) {
 	if (val >= 1.0f && val <= 120.0f) {
 		m_leakTestDurationSec = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "Leak test duration set to %.1f seconds.", m_leakTestDurationSec);
+		snprintf(response, sizeof(response), "set_leak_test_duration_s complete. Duration=%.1f seconds.", m_leakTestDurationSec);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid leak duration. Must be between 1.0 and 120.0 seconds.");

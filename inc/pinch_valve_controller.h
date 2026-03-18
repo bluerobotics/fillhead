@@ -199,6 +199,8 @@ private:
 
 	char m_telemetryBuffer[160];
 
+	const char* m_activeCommandStr;
+
 	long m_homingDistanceSteps;
 	long m_homingBackoffSteps;
 	int m_homingRapidSps;

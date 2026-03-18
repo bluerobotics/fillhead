@@ -59,7 +59,7 @@ Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controlle
     m_axisBStopped = false;
     m_homeSensorsInitialized = false;
 
-    strcpy(m_force_mode, "motor_torque");
+    strcpy(m_force_mode, "load_cell");
     m_motor_torque_scale = 0.0335f;
     m_motor_torque_offset = 1.04f;
 
@@ -82,6 +82,7 @@ Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controlle
     m_cumulative_dispensed_ml = 0.0f;
     m_cumulative_distance_mm = 0.0f;
 
+    m_cartridge_ml_per_mm = DEFAULT_CARTRIDGE_ML_PER_MM;
     m_feedDefaultTorquePercent = FEED_DEFAULT_TORQUE_PERCENT;
     m_feedDefaultVelocitySPS = FEED_DEFAULT_VELOCITY_SPS;
     m_feedDefaultAccelSPS2 = FEED_DEFAULT_ACCEL_SPS2;
@@ -170,7 +171,7 @@ void Injector::setup() {
 
     if (magicValue != NVM_MAGIC_NUMBER) {
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(3 * 4), 0);  // Polarity: normal
-        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4), 0);  // Force mode: motor_torque
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4), 1);  // Force mode: load_cell
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(5 * 4), (int32_t)(0.0335f * 100000.0f));
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(6 * 4), (int32_t)(1.04f * 10000.0f));
 
@@ -189,6 +190,7 @@ void Injector::setup() {
 
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_INJ_VALVE_HOME_ON_BOOT), 1);
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_VAC_VALVE_HOME_ON_BOOT), 1);
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_CARTRIDGE_ML_PER_MM), (int32_t)(DEFAULT_CARTRIDGE_ML_PER_MM * 10000.0f));
 
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(7 * 4), NVM_MAGIC_NUMBER);
     }
@@ -200,7 +202,7 @@ void Injector::setup() {
     m_motorA->PolarityInvertSDDirection(isInverted);
     m_motorB->PolarityInvertSDDirection(isInverted);
 
-    // Load force mode (0 = motor_torque, 1 = load_cell)
+    // Load force mode (0 = motor_torque, 1 = load_cell, default load_cell)
     int32_t forceModeValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4));
     strcpy(m_force_mode, (forceModeValue == 0) ? "motor_torque" : "load_cell");
 
@@ -267,6 +269,15 @@ void Injector::setup() {
         memcpy(&tempThreshold, &thresholdBits, sizeof(float));
         if (tempThreshold >= 0.1f && tempThreshold <= 50.0f) {
             m_press_threshold_kg = tempThreshold;
+        }
+    }
+
+    // Load cartridge ratio (ml/mm, stored as int * 10000)
+    int32_t ratioBits = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_CARTRIDGE_ML_PER_MM));
+    if (ratioBits > 0 && ratioBits != -1) {
+        float tempRatio = (float)ratioBits / 10000.0f;
+        if (tempRatio >= 0.01f && tempRatio <= 100.0f) {
+            m_cartridge_ml_per_mm = tempRatio;
         }
     }
 }
@@ -618,6 +629,30 @@ void Injector::updateState() {
                 return;
             }
 
+            if (m_feedState == FEED_INJECT_ACTIVE && m_active_op_feed_force_limit_kg > 0.1f) {
+                const char* mode = getForceMode();
+                if (strcmp(mode, "load_cell") == 0) {
+                    const char* errorMsg = nullptr;
+                    if (checkForceSensorStatus(&errorMsg)) {
+                        abortMove();
+                        char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+                        snprintf(fullMsg, sizeof(fullMsg), "Inject stopped: %s", errorMsg);
+                        reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+                        finalizeAndResetActiveDispenseOperation(false);
+                        m_state = STATE_STANDBY;
+                        return;
+                    }
+                    float current_force = m_controller->m_forceSensor.getForce();
+                    if (current_force >= m_active_op_feed_force_limit_kg) {
+                        char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
+                        snprintf(limit_desc, sizeof(limit_desc), "Inject force limit (%.1f kg, actual: %.1f kg)",
+                                 m_active_op_feed_force_limit_kg, current_force);
+                        handleFeedLimitReached(limit_desc, current_force);
+                        return;
+                    }
+                }
+            }
+
             if (!isMoving() && m_feedState != FEED_INJECT_PAUSED) {
                 bool isStarting = (m_feedState == FEED_INJECT_STARTING);
                 uint32_t elapsed = Milliseconds() - m_feedStartTime;
@@ -694,14 +729,16 @@ void Injector::updateState() {
                         m_moveState = MOVE_PAUSED;
                         return;
                     }
-                    // TODO: When load cell hardware is added, check force limit here:
-                    // if (m_active_op_force_limit_kg > 0.1f) {
-                    //     float current_force = getLoadCellForce();
-                    //     if (current_force >= m_active_op_force_limit_kg) {
-                    //         handleLimitReached("Force limit", current_force);
-                    //         return;
-                    //     }
-                    // }
+                    if (m_active_op_force_limit_kg > 0.1f) {
+                        float current_force = m_controller->m_forceSensor.getForce();
+                        if (current_force >= m_active_op_force_limit_kg) {
+                            char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
+                            snprintf(limit_desc, sizeof(limit_desc), "Force limit (%.1f kg, actual: %.1f kg)",
+                                     m_active_op_force_limit_kg, current_force);
+                            handleLimitReached(limit_desc, current_force);
+                            return;
+                        }
+                    }
                 } else {
                     if (checkTorqueLimit()) {
                         char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
@@ -822,7 +859,7 @@ void Injector::handleCommand(Command cmd, const char* args) {
     // Block new motion commands while busy
     if (m_state != STATE_STANDBY &&
         (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE ||
-         cmd == CMD_INJECT_STATOR || cmd == CMD_INJECT_ROTOR ||
+         cmd == CMD_INJECT ||
          cmd == CMD_HOME || cmd == CMD_MOVE_ABS || cmd == CMD_MOVE_INC || cmd == CMD_RETRACT ||
          cmd == CMD_MOVE_TO_CARTRIDGE_HOME || cmd == CMD_MOVE_TO_CARTRIDGE_RETRACT)) {
         reportEvent(STATUS_PREFIX_ERROR, "Injector command ignored: Another operation is in progress.");
@@ -836,11 +873,11 @@ void Injector::handleCommand(Command cmd, const char* args) {
         case CMD_CARTRIDGE_HOME_MOVE:       cartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_HOME:    moveToCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: moveToCartridgeRetract(args); break;
-        case CMD_INJECT_STATOR:
-            initiateInjectMove(args, STATOR_PISTON_A_DIAMETER_MM, STATOR_PISTON_B_DIAMETER_MM, CMD_STR_INJECT_STATOR);
+        case CMD_INJECT:
+            initiateInjectMove(args);
             break;
-        case CMD_INJECT_ROTOR:
-            initiateInjectMove(args, ROTOR_PISTON_A_DIAMETER_MM, ROTOR_PISTON_B_DIAMETER_MM, CMD_STR_INJECT_ROTOR);
+        case CMD_SET_CARTRIDGE_ML_PER_MM:
+            setCartridgeMlPerMm(args);
             break;
         case CMD_PAUSE_INJECTION:           pauseOperation(); break;
         case CMD_RESUME_INJECTION:          resumeOperation(); break;
@@ -1092,21 +1129,18 @@ void Injector::moveToCartridgeRetract(const char* args) {
     startMove(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
 }
 
-void Injector::initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str) {
+void Injector::initiateInjectMove(const char* args) {
     float volume_ml = 0.0f;
     float speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
+    float force_limit_kg = 0.0f;
+    char force_action[16] = "abort";
     float accel_sps2 = (float)m_feedDefaultAccelSPS2;
     int torque_percent = m_feedDefaultTorquePercent;
 
-    int parsed_count = std::sscanf(args, "%f %f", &volume_ml, &speed_ml_s);
+    int parsed_count = std::sscanf(args, "%f %f %f %15s", &volume_ml, &speed_ml_s, &force_limit_kg, force_action);
 
     if (parsed_count >= 1) {
-        float radius_a = piston_a_diam / 2.0f;
-        float radius_b = piston_b_diam / 2.0f;
-        float area_a = M_PI * radius_a * radius_a;
-        float area_b = M_PI * radius_b * radius_b;
-        float total_area_mm2 = area_a + area_b;
-        float ml_per_mm = total_area_mm2 / 1000.0f;
+        float ml_per_mm = m_cartridge_ml_per_mm;
         float steps_per_ml = STEPS_PER_MM_INJECTOR / ml_per_mm;
 
         if (torque_percent <= 0 || torque_percent > 100) torque_percent = m_feedDefaultTorquePercent;
@@ -1124,19 +1158,35 @@ void Injector::initiateInjectMove(const char* args, float piston_a_diam, float p
         m_active_op_velocity_sps = (int)(speed_ml_s * steps_per_ml);
         m_active_op_accel_sps2 = (int)accel_sps2;
         m_active_op_torque_percent = torque_percent;
-        m_activeFeedCommand = command_str;
+        m_active_op_feed_force_limit_kg = force_limit_kg;
+        strncpy(m_active_op_feed_force_action, force_action, sizeof(m_active_op_feed_force_action) - 1);
+        m_active_op_feed_force_action[sizeof(m_active_op_feed_force_action) - 1] = '\0';
+        m_activeFeedCommand = CMD_STR_INJECT;
         m_feedStartTime = Milliseconds();
 
         char start_msg[128];
-        snprintf(start_msg, sizeof(start_msg), "%s initiated. (steps/ml: %.2f)", command_str, steps_per_ml);
+        snprintf(start_msg, sizeof(start_msg), "inject initiated. (ml/mm: %.4f, steps/ml: %.2f, force_limit: %.1f kg, action: %s)",
+                 ml_per_mm, steps_per_ml, force_limit_kg, force_action);
         reportEvent(STATUS_PREFIX_START, start_msg);
 
         m_torqueLimit = (float)m_active_op_torque_percent;
         startMove(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2);
     } else {
-        char error_msg[128];
-        snprintf(error_msg, sizeof(error_msg), "Invalid %s format. At least 1 parameter (volume) is required.", command_str);
-        reportEvent(STATUS_PREFIX_ERROR, error_msg);
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid inject format. Usage: inject <volume_ml> [speed_ml_s] [force_limit_kg] [force_action]");
+    }
+}
+
+void Injector::setCartridgeMlPerMm(const char* args) {
+    float ratio = 0.0f;
+    if (std::sscanf(args, "%f", &ratio) == 1 && ratio > 0.0f) {
+        m_cartridge_ml_per_mm = ratio;
+        NvmManager &nvmMgr = NvmManager::Instance();
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_CARTRIDGE_ML_PER_MM), (int32_t)(ratio * 10000.0f));
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Cartridge ratio set to %.4f ml/mm and saved to NVM", ratio);
+        reportEvent(STATUS_PREFIX_DONE, msg);
+    } else {
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid set_cartridge_ml_per_mm format. Usage: set_cartridge_ml_per_mm <ml_per_mm>");
     }
 }
 
@@ -1214,6 +1264,15 @@ void Injector::moveAbsolute(const char* args) {
             char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
             snprintf(fullMsg, sizeof(fullMsg), "Move aborted: %s", errorMsg);
             reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+            return;
+        }
+
+        float current_force = m_controller->m_forceSensor.getForce();
+        if (strcmp(force_action, "hold") == 0 && force_kg > 0.0f && current_force >= force_kg) {
+            char msg[STATUS_MESSAGE_BUFFER_SIZE];
+            snprintf(msg, sizeof(msg), "Force limit (%.2f kg) already reached. Current force: %.2f kg",
+                     force_kg, current_force);
+            reportEvent(STATUS_PREFIX_ERROR, msg);
             return;
         }
     }
@@ -1326,6 +1385,15 @@ void Injector::moveIncremental(const char* args) {
             char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
             snprintf(fullMsg, sizeof(fullMsg), "Move aborted: %s", errorMsg);
             reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+            return;
+        }
+
+        float current_force = m_controller->m_forceSensor.getForce();
+        if (strcmp(force_action, "hold") == 0 && force_kg > 0.0f && current_force >= force_kg) {
+            char msg[STATUS_MESSAGE_BUFFER_SIZE];
+            snprintf(msg, sizeof(msg), "Force limit (%.2f kg) already reached. Current force: %.2f kg",
+                     force_kg, current_force);
+            reportEvent(STATUS_PREFIX_ERROR, msg);
             return;
         }
     }
@@ -1847,12 +1915,25 @@ bool Injector::checkForceSensorStatus(const char** errorMsg) {
     if (strcmp(m_force_mode, "motor_torque") == 0) {
         return false;
     }
-    // TODO: When load cell hardware is added, implement full validation:
-    // - Check isConnected()
-    // - Validate reading >= FORCE_SENSOR_MIN_KG (-10 kg)
-    // - Validate reading <= FORCE_SENSOR_MAX_LIMIT_KG (1440 kg)
-    *errorMsg = "Load cell not available on Fillhead. Use motor_torque mode.";
-    return true;
+
+    if (!m_controller->m_forceSensor.isConnected()) {
+        *errorMsg = "Force sensor disconnected";
+        return true;
+    }
+
+    float force = m_controller->m_forceSensor.getForce();
+
+    if (force < FORCE_SENSOR_MIN_KG) {
+        *errorMsg = "Force sensor error: reading below minimum (-10 kg)";
+        return true;
+    }
+
+    if (force > FORCE_SENSOR_MAX_LIMIT_KG) {
+        *errorMsg = "Force sensor error: reading above maximum (1440 kg)";
+        return true;
+    }
+
+    return false;
 }
 
 void Injector::handleLimitReached(const char* limit_type, float limit_value) {
@@ -1926,6 +2007,49 @@ void Injector::handleLimitReached(const char* limit_type, float limit_value) {
     }
 }
 
+void Injector::handleFeedLimitReached(const char* limit_type, float limit_value) {
+    abortMove();
+
+    char msg[STATUS_MESSAGE_BUFFER_SIZE];
+    snprintf(msg, sizeof(msg), "%s reached.", limit_type);
+    reportEvent(STATUS_PREFIX_INFO, msg);
+
+    const char* action = m_active_op_feed_force_action;
+
+    if (strcmp(action, "retract") == 0 || strcmp(action, "abort") == 0) {
+        if (strcmp(action, "abort") == 0) {
+            reportEvent(STATUS_PREFIX_ERROR, "Injection aborted due to force limit");
+        } else {
+            reportEvent(STATUS_PREFIX_INFO, "Inject force limit reached, retracting...");
+        }
+        finalizeAndResetActiveDispenseOperation(false);
+        long retract_target = (m_retractReferenceSteps == LONG_MIN)
+            ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
+        m_state = STATE_MOVING;
+        m_moveState = MOVE_TO_HOME;
+        m_activeMoveCommand = "retract";
+        m_active_op_target_position_steps = retract_target;
+        long cur = m_motorA->PositionRefCommanded();
+        long steps = retract_target - cur;
+        m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+        float spd = (m_retractSpeedMms > 0.0f) ? m_retractSpeedMms : RETRACT_DEFAULT_SPEED_MMS;
+        if (spd > 100.0f) spd = 100.0f;
+        int vel = static_cast<int>(spd * STEPS_PER_MM_INJECTOR);
+        m_active_op_velocity_sps = vel;
+        m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+        startMove(steps, vel, m_moveDefaultAccelSPS2);
+        reportEvent(STATUS_PREFIX_START, "retract");
+    } else if (strcmp(action, "skip") == 0) {
+        reportEvent(STATUS_PREFIX_DONE, "inject");
+        finalizeAndResetActiveDispenseOperation(true);
+        m_state = STATE_STANDBY;
+    } else {
+        // "hold" — pause feed and signal host
+        m_feedState = FEED_INJECT_PAUSED;
+        sendEvent(EVENT_SCRIPT_HOLD);
+    }
+}
+
 //==================================================================================================
 // --- Dispense Operation Finalization ---
 //==================================================================================================
@@ -1947,6 +2071,8 @@ void Injector::fullyResetActiveDispenseOperation() {
     m_active_op_segment_initial_axis_steps = 0;
     m_active_op_initial_axis_steps = 0;
     m_active_op_steps_per_ml = 0.0f;
+    m_active_op_feed_force_limit_kg = 0.0f;
+    m_active_op_feed_force_action[0] = '\0';
     m_activeFeedCommand = nullptr;
 }
 
@@ -2007,8 +2133,7 @@ void Injector::updateJoules() {
     double distance_mm = current_pos_mm - m_prev_position_mm;
     double abs_distance_mm = fabs(distance_mm);
 
-    // TODO: Replace with actual load cell reading when hardware is available
-    float raw_force_sample = 0.0f;
+    float raw_force_sample = m_controller->m_forceSensor.getForce();
     if (!m_prevForceValid) {
         m_prevForceKg = raw_force_sample;
         if (m_prevForceKg < 0.0f) m_prevForceKg = 0.0f;
@@ -2159,14 +2284,23 @@ const char* Injector::getTelemetryString() {
         enabled0, enabled1,
         (int)m_state);
 
+    // Load cell force and raw ADC (from actual sensor)
+    float force_load_cell = 0.0f;
+    int32_t force_adc_raw = 0;
+    if (m_controller->m_forceSensor.isConnected()) {
+        force_load_cell = m_controller->m_forceSensor.getForce();
+        force_adc_raw = (int32_t)m_controller->m_forceSensor.getRawValue();
+    }
+
     // Stage 2: Pressboi-compatible fields (appended if space remains)
     if (n > 0 && (size_t)n < sizeof(m_telemetryBuffer) - 1) {
         std::snprintf(m_telemetryBuffer + n, sizeof(m_telemetryBuffer) - n,
-            ",fmt:%.1f,fl:%.1f,j:%.4f,"
+            ",fmt:%.1f,flc:%.2f,far:%ld,fl:%.1f,j:%.4f,"
             "cp:%.3f,rp:%.2f,tp:%.2f,"
             "ep:%.3f,sp:%.3f,pt:%.1f,"
             "hs0:%d,hs1:%d,fm:%s,pol:%s",
-            force_motor_torque, force_limit, (float)m_joules,
+            force_motor_torque, force_load_cell, (long)force_adc_raw,
+            force_limit, (float)m_joules,
             machine_pos_mm, retract_pos, target_pos,
             m_endpoint_mm, m_press_startpoint_mm, m_press_threshold_kg,
             getHomeSensorStateM0() ? 1 : 0, getHomeSensorStateM1() ? 1 : 0,

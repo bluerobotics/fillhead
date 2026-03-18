@@ -1197,7 +1197,7 @@
             const c3 = polyCoeffs[3].toFixed(4);
             const c4 = polyCoeffs[4].toFixed(4);
             
-            const command = `pressboi.set_strain_cal ${c4} ${c3} ${c2} ${c1} ${c0}`;
+            const command = `fillhead.set_strain_cal ${c4} ${c3} ${c2} ${c1} ${c0}`;
             coeffContent.innerHTML = `
                 <div class="coeff-equation">force = ${c4}x⁴ + ${c3}x³ + ${c2}x² + ${c1}x + ${c0}</div>
                 <div class="coeff-values">

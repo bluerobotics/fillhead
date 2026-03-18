@@ -55,8 +55,8 @@ Command parseCommand(const char* cmdStr) {
     if (strncmp(cmdStr, CMD_STR_VACUUM_OFF, strlen(CMD_STR_VACUUM_OFF)) == 0) return CMD_VACUUM_OFF;
 
     // Injection motion commands (longer first)
-    if (strncmp(cmdStr, CMD_STR_INJECT_STATOR, strlen(CMD_STR_INJECT_STATOR)) == 0) return CMD_INJECT_STATOR;
-    if (strncmp(cmdStr, CMD_STR_INJECT_ROTOR, strlen(CMD_STR_INJECT_ROTOR)) == 0) return CMD_INJECT_ROTOR;
+    if (strncmp(cmdStr, CMD_STR_SET_CARTRIDGE_ML_PER_MM, strlen(CMD_STR_SET_CARTRIDGE_ML_PER_MM)) == 0) return CMD_SET_CARTRIDGE_ML_PER_MM;
+    if (strncmp(cmdStr, CMD_STR_INJECT, strlen(CMD_STR_INJECT)) == 0) return CMD_INJECT;
     if (strncmp(cmdStr, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
     if (strncmp(cmdStr, CMD_STR_MOVE_TO_CARTRIDGE_HOME, strlen(CMD_STR_MOVE_TO_CARTRIDGE_HOME)) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
     if (strncmp(cmdStr, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
@@ -98,8 +98,8 @@ const char* getCommandParams(const char* cmdStr, Command cmd) {
         case CMD_SET_POLARITY:        return cmdStr + strlen(CMD_STR_SET_POLARITY);
         case CMD_HOME_ON_BOOT:        return cmdStr + strlen(CMD_STR_HOME_ON_BOOT);
         case CMD_SET_PRESS_THRESHOLD: return cmdStr + strlen(CMD_STR_SET_PRESS_THRESHOLD);
-        case CMD_INJECT_STATOR:       return cmdStr + strlen(CMD_STR_INJECT_STATOR);
-        case CMD_INJECT_ROTOR:        return cmdStr + strlen(CMD_STR_INJECT_ROTOR);
+        case CMD_INJECT:              return cmdStr + strlen(CMD_STR_INJECT);
+        case CMD_SET_CARTRIDGE_ML_PER_MM: return cmdStr + strlen(CMD_STR_SET_CARTRIDGE_ML_PER_MM);
         case CMD_JOG_MOVE:            return cmdStr + strlen(CMD_STR_JOG_MOVE);
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: return cmdStr + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT);
         case CMD_INJECTION_VALVE_JOG: return cmdStr + strlen(CMD_STR_INJECTION_VALVE_JOG);

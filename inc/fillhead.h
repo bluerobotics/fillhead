@@ -15,6 +15,7 @@
 #include "config.h"
 #include "events.h"
 #include "comms_controller.h"
+#include "force_sensor.h"
 #include "injector_controller.h"
 #include "pinch_valve_controller.h"
 #include "heater_controller.h"
@@ -196,6 +197,7 @@ private:
 public:
     // --- Component Ownership ---
     CommsController  m_comms;           ///< Manages all network and serial communication.
+    ForceSensor      m_forceSensor;     ///< Manages force readings from HX711 via Rugeduino on COM-0.
 
 private:
     Injector         m_injector;        ///< Manages the dual-motor dispensing system.

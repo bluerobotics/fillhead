@@ -297,6 +297,7 @@
 
 #define NVM_SLOT_INJ_VALVE_HOME_ON_BOOT         (16 * 4) ///< NVM byte offset for injection valve home-on-boot flag.
 #define NVM_SLOT_VAC_VALVE_HOME_ON_BOOT         (17 * 4) ///< NVM byte offset for vacuum valve home-on-boot flag.
+#define NVM_SLOT_CARTRIDGE_ML_PER_MM            (18 * 4) ///< NVM byte offset for cartridge ml_per_mm (stored as int * 10000).
 /** @} */
 
 /**
@@ -325,10 +326,7 @@
  * @{
  */
 #define INJECT_DEFAULT_SPEED_MLS            0.5f      ///< Default injection speed in ml/s.
-#define STATOR_PISTON_A_DIAMETER_MM         75.0f     ///< Diameter (mm) of piston A for stator injections.
-#define STATOR_PISTON_B_DIAMETER_MM         33.0f     ///< Diameter (mm) of piston B for stator injections.
-#define ROTOR_PISTON_A_DIAMETER_MM          33.0f     ///< Diameter (mm) of piston A for rotor injections.
-#define ROTOR_PISTON_B_DIAMETER_MM          33.0f     ///< Diameter (mm) of piston B for rotor injections.
+#define DEFAULT_CARTRIDGE_ML_PER_MM         5.2732f   ///< Default cartridge ratio: mL dispensed per mm piston travel (from legacy 75+33mm stator pistons).
 /** @} */
 
 /**

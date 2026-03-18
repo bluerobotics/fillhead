@@ -58,8 +58,8 @@
  * @name Fillhead Injection Commands
  * @{
  */
-#define CMD_STR_INJECT_STATOR               "inject_stator "
-#define CMD_STR_INJECT_ROTOR                "inject_rotor "
+#define CMD_STR_INJECT                      "inject "
+#define CMD_STR_SET_CARTRIDGE_ML_PER_MM         "set_cartridge_ml_per_mm "
 #define CMD_STR_JOG_MOVE                    "jog_move "
 #define CMD_STR_MACHINE_HOME                "machine_home"
 #define CMD_STR_MACHINE_HOME_MOVE           "machine_home_move"
@@ -151,8 +151,8 @@ typedef enum {
     CMD_CANCEL,
 
     // Fillhead Injection Commands
-    CMD_INJECT_STATOR,
-    CMD_INJECT_ROTOR,
+    CMD_INJECT,
+    CMD_SET_CARTRIDGE_ML_PER_MM,
     CMD_JOG_MOVE,
     CMD_MACHINE_HOME,
     CMD_MACHINE_HOME_MOVE,

@@ -133,6 +133,7 @@ void Fillhead::setup() {
 #if WATCHDOG_ENABLED
     g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_FORCE;
 #endif
+    m_forceSensor.setup();
     m_heater.setup();
     m_vacuum.setup();
 
@@ -265,19 +266,22 @@ void Fillhead::loop() {
         dispatchCommand(msg);
     }
 
-    // 4. Update the main state machine and all sub-controllers.
+    // 4. Update force sensor readings (every loop iteration for responsiveness).
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_FORCE_UPDATE;
+#endif
+    m_forceSensor.update();
+
+    // 5. Update the main state machine and all sub-controllers.
 #if WATCHDOG_ENABLED
     g_watchdogBreadcrumb = WD_BREADCRUMB_UPDATE_STATE;
 #endif
     updateState();
 
-    // 5. Handle time-based periodic tasks.
+    // 6. Handle time-based periodic tasks.
     uint32_t now = Milliseconds();
     if (now - m_lastSensorSampleTime >= SENSOR_SAMPLE_INTERVAL_MS) {
         m_lastSensorSampleTime = now;
-#if WATCHDOG_ENABLED
-        g_watchdogBreadcrumb = WD_BREADCRUMB_FORCE_UPDATE;
-#endif
         m_heater.updateTemperature();
         m_vacuum.updateVacuum();
     }
@@ -515,7 +519,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         }
     }
 
-    if (command_enum == CMD_INJECT_STATOR || command_enum == CMD_INJECT_ROTOR) {
+    if (command_enum == CMD_INJECT) {
         if (!m_injectorValve.isHomed() || !m_injectorValve.isOpen()) {
             reportEvent(STATUS_PREFIX_ERROR, "Injection command ignored: Injector valve is not homed and open.");
             return;
@@ -573,8 +577,8 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_CARTRIDGE_HOME_MOVE:
         case CMD_MOVE_TO_CARTRIDGE_HOME:
         case CMD_MOVE_TO_CARTRIDGE_RETRACT:
-        case CMD_INJECT_STATOR:
-        case CMD_INJECT_ROTOR:
+        case CMD_INJECT:
+        case CMD_SET_CARTRIDGE_ML_PER_MM:
         case CMD_PAUSE_INJECTION:
         case CMD_RESUME_INJECTION:
         case CMD_CANCEL_INJECTION:
@@ -669,14 +673,17 @@ void Fillhead::dispatchCommand(const Message& msg) {
             if (sscanf(args, "%f", &offset) == 1) {
                 const char* mode = m_injector.getForceMode();
                 if (strcmp(mode, "load_cell") == 0) {
-                    reportEvent(STATUS_PREFIX_ERROR, "No load cell on Fillhead. Switch to motor_torque mode first.");
+                    m_forceSensor.setOffset(offset);
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Load cell offset set to %.2f kg and saved to NVM", offset);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
                 } else {
                     m_injector.setForceCalibrationOffset(offset);
                     char msg_buf[128];
                     snprintf(msg_buf, sizeof(msg_buf), "Motor torque offset set to %.4f and saved to NVM", offset);
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
-                    reportEvent(STATUS_PREFIX_DONE, "set_force_offset");
                 }
+                reportEvent(STATUS_PREFIX_DONE, "set_force_offset");
             } else {
                 reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_offset");
             }
@@ -687,21 +694,48 @@ void Fillhead::dispatchCommand(const Message& msg) {
             if (sscanf(args, "%f", &scale) == 1) {
                 const char* mode = m_injector.getForceMode();
                 if (strcmp(mode, "load_cell") == 0) {
-                    reportEvent(STATUS_PREFIX_ERROR, "No load cell on Fillhead. Switch to motor_torque mode first.");
+                    m_forceSensor.setScale(scale);
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Load cell scale set to %.6f and saved to NVM", scale);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
                 } else {
                     m_injector.setForceCalibrationScale(scale);
                     char msg_buf[128];
                     snprintf(msg_buf, sizeof(msg_buf), "Motor torque scale set to %.6f and saved to NVM", scale);
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
-                    reportEvent(STATUS_PREFIX_DONE, "set_force_scale");
                 }
+                reportEvent(STATUS_PREFIX_DONE, "set_force_scale");
             } else {
                 reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_scale");
             }
             break;
         }
         case CMD_SET_FORCE_ZERO: {
-            reportEvent(STATUS_PREFIX_ERROR, "set_force_zero: No load cell on Fillhead. Use motor_torque calibration.");
+            const char* mode = m_injector.getForceMode();
+            if (strcmp(mode, "load_cell") == 0) {
+                float old_offset = m_forceSensor.getOffset();
+                float current_force = m_forceSensor.getForce();
+                float new_offset = old_offset - current_force;
+
+                m_forceSensor.setOffset(new_offset);
+
+                char msg_buf[128];
+                snprintf(msg_buf, sizeof(msg_buf), "Load cell offset: %.2f kg -> %.2f kg",
+                         old_offset, new_offset);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+            } else {
+                float old_offset = m_injector.getForceCalibrationOffset();
+                float current_torque = (MOTOR_INJECTOR_A.HlfbPercent() + MOTOR_INJECTOR_B.HlfbPercent()) / 2.0f;
+                float new_offset = -current_torque;
+
+                m_injector.setForceCalibrationOffset(new_offset);
+
+                char msg_buf[128];
+                snprintf(msg_buf, sizeof(msg_buf), "Motor torque offset: %.4f%% -> %.4f%%",
+                         old_offset, new_offset);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+            }
+            reportEvent(STATUS_PREFIX_DONE, "set_force_zero");
             break;
         }
         case CMD_SET_STRAIN_CAL: {
@@ -931,10 +965,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
 
         case CMD_RESET_NVM: {
             NvmManager &nvmMgr = NvmManager::Instance();
-            for (int i = 0; i < 16; ++i) {
+            for (int i = 0; i <= 18; ++i) {
                 nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(i * 4), -1);
             }
-            reportEvent(STATUS_PREFIX_INFO, "All NVM locations reset to erased state. Reboot required.");
+            reportEvent(STATUS_PREFIX_INFO, "All NVM locations (slots 0-18) reset to erased state. Reboot required.");
             reportEvent(STATUS_PREFIX_DONE, "reset_nvm");
             break;
         }

@@ -430,7 +430,12 @@ void PinchValve::disable() {
 }
 
 void PinchValve::abort() {
-    if (m_state == VALVE_MOVING || m_state == VALVE_JOGGING) {
+    if (m_state == VALVE_HOMING) {
+        m_motor->MoveStopAbrupt();
+        m_state = VALVE_HALTED;
+        m_isHomed = false;
+        m_homingPhase = HOMING_PHASE_IDLE;
+    } else if (m_state == VALVE_MOVING || m_state == VALVE_JOGGING) {
         m_motor->MoveStopAbrupt();
         m_state = VALVE_HALTED;
         m_opPhase = PHASE_IDLE;

@@ -368,6 +368,7 @@ private:
     bool checkTorqueLimit();
     bool checkForceSensorStatus(const char** errorMsg);
     void handleLimitReached(const char* limit_type, float limit_value);
+    void handleFeedLimitReached(const char* limit_type, float limit_value);
     void finalizeAndResetActiveDispenseOperation(bool success);
     void fullyResetActiveDispenseOperation();
     void finalizeAndResetActiveMove(bool success);
@@ -392,7 +393,8 @@ private:
     void cartridgeHome();
     void moveToCartridgeHome();
     void moveToCartridgeRetract(const char* args);
-    void initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str);
+    void initiateInjectMove(const char* args);
+    void setCartridgeMlPerMm(const char* args);
     void pauseOperation();
     void resumeOperation();
     void cancelOperation();
@@ -523,6 +525,7 @@ private:
 
     // ── Feed (Injection) Default Parameters ──────────────────────────────
 
+    float m_cartridge_ml_per_mm;       ///< NVM-persisted cartridge ratio (mL per mm of piston travel).
     int m_feedDefaultTorquePercent;    ///< Default torque (%) for feed moves.
     long m_feedDefaultVelocitySPS;     ///< Default velocity (steps/sec) for feed moves.
     long m_feedDefaultAccelSPS2;       ///< Default acceleration (steps/sec^2) for feed moves.
@@ -563,6 +566,8 @@ private:
     int m_active_op_velocity_sps;           ///< Velocity (steps/sec) for the current operation.
     int m_active_op_accel_sps2;             ///< Acceleration (steps/sec^2) for the current operation.
     int m_active_op_torque_percent;         ///< Torque limit (%) for the current operation.
+    float m_active_op_feed_force_limit_kg;  ///< Force limit (kg) for injection (STATE_FEEDING), 0 = disabled.
+    char m_active_op_feed_force_action[16]; ///< Action on feed force limit: "retract", "hold", "skip", "abort".
     uint32_t m_feedStartTime;               ///< Timestamp (ms) when a feed operation started.
 
     /** @} */

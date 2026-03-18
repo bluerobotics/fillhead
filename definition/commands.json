@@ -214,23 +214,24 @@
         "params": [],
         "returns": ["done", "error"]
     },
-    "inject_stator": {
+    "inject": {
         "device": "fillhead",
         "target": "device",
-        "description": "Dispense a specific volume using the stator (5:1) configuration.",
+        "description": "Dispense a specific volume using the current cartridge ratio (ml/mm). Optionally set a force limit to detect cartridge bottom.",
         "params": [
             { "parameter": "volume", "unit": "ml", "type": "float" },
-            { "parameter": "speed", "unit": "ml/s", "type": "float", "optional": true }
+            { "parameter": "speed", "unit": "ml/s", "type": "float", "optional": true },
+            { "parameter": "force_limit", "unit": "kg", "type": "float", "optional": true },
+            { "parameter": "force_action", "unit": "", "type": "string", "optional": true, "values": ["retract", "hold", "skip", "abort"] }
         ],
         "returns": ["done", "error"]
     },
-    "inject_rotor": {
+    "set_cartridge_ml_per_mm": {
         "device": "fillhead",
         "target": "device",
-        "description": "Dispense a specific volume using the rotor (1:1) configuration.",
+        "description": "Set the cartridge ratio (mL per mm of piston travel) and save to NVM.",
         "params": [
-            { "parameter": "volume", "unit": "ml", "type": "float" },
-            { "parameter": "speed", "unit": "ml/s", "type": "float", "optional": true }
+            { "parameter": "ml_per_mm", "unit": "ml/mm", "type": "float" }
         ],
         "returns": ["done", "error"]
     },

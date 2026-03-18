@@ -99,13 +99,18 @@ def handle_command(device_sim, command, args, gui_address):
 
     # ── Injection commands ────────────────────────────────────────────
 
-    elif cmd_lower in ("inject_stator", "inject_rotor"):
+    elif cmd_lower == "inject":
         vol = float(args[0]) if args else 0.0
         device_sim.state['inj_tgt_ml'] = vol
         device_sim.set_state('MAIN_STATE', 'INJECTING')
         device_sim.command_queue.append(
             (simulate_injection, (device_sim, vol, 2.0, gui_address, command)))
         return True
+
+    elif cmd_lower == "set_cartridge_ml_per_mm":
+        ratio = float(args[0]) if args else 5.2732
+        device_sim.state['cartridge_ml_per_mm'] = ratio
+        return False
 
     elif cmd_lower == "jog_move":
         distance = float(args[0]) if args else 0.0
@@ -568,6 +573,7 @@ if __name__ == "__main__":
         'inj_active_ml': 0.0,
         'inj_cumulative_ml': 0.0,
         'inj_tgt_ml': 0.0,
+        'cartridge_ml_per_mm': 5.2732,
         'inj_valve_st': 'Not Homed',
         'inj_valve_homed': 0,
         'inj_valve_pos': 0.0,

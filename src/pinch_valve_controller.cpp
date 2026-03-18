@@ -16,7 +16,7 @@
 #include <math.h>
 #include <string.h>
 
-PinchValve::PinchValve(const char* name, MotorDriver* motor, Connector& homeSensor, int nvmSlot, Fillhead* controller) :
+PinchValve::PinchValve(const char* name, MotorDriver* motor, DigitalIn& homeSensor, int nvmSlot, Fillhead* controller) :
     m_name(name),
     m_motor(motor),
     m_homeSensor(homeSensor),

@@ -1,0 +1,12 @@
+---
+description: Plan storage conventions
+alwaysApply: true
+---
+
+# Plans
+
+- Always store plans in the repo at `.cursor/plans/` (NOT in the global Cursor plans directory)
+- Use `.plan.md` extension with YAML frontmatter (name, overview, todos with id/content/status)
+- Use descriptive kebab-case filenames (e.g. `second-round-gap-analysis.plan.md`)
+- Todos must be comprehensive and actionable -- include specific file paths, line numbers, and what to change
+- Plans are version-controlled alongside the code they describe

@@ -2,6 +2,43 @@
 
 All notable changes to the Fillhead firmware will be documented in this file.
 
+## [0.3.0] - 2026-03-18
+
+### ForceSensor Port (CRITICAL)
+- Ported `ForceSensor` class from Pressboi (`force_sensor.h`/`force_sensor.cpp`) — HX711 load cell via Rugeduino on COM-0
+- Added `ForceSensor m_forceSensor` as public member on `Fillhead`; Injector accesses via `m_controller->m_forceSensor`
+- Fixed `checkForceSensorStatus()` stub — now checks `isConnected()` and validates force range (-10 to 1440 kg)
+- Wired `updateJoules()` to real load cell data (was hardcoded `0.0f`)
+- Wired `getTelemetryString()` `force_load_cell` and `force_adc_raw` to real sensor readings
+- Uncommented and wired STATE_MOVING force limit check to `m_forceSensor.getForce()`
+- Fixed pre-move force check in `moveAbsolute()`/`moveIncremental()` for load cell hold action
+- Implemented `CMD_SET_FORCE_ZERO`, `CMD_SET_FORCE_OFFSET`, `CMD_SET_FORCE_SCALE` for load cell mode (were returning errors)
+- Changed default force mode from `motor_torque` to `load_cell`
+- NVM slots 0-1 now used by `ForceSensor` for load cell offset/scale calibration
+
+### Inject Command Rework (MAJOR)
+- Merged `inject_stator` and `inject_rotor` into single `inject` command
+- New signature: `inject <volume_ml> [speed_ml_s] [force_limit_kg] [force_action]`
+- Added `set_cartridge_ml_per_mm` command — NVM-persisted cartridge ratio (slot 18) replaces hardcoded piston diameter constants
+- Default ratio 5.2732 ml/mm (computed from legacy 75+33mm stator pistons)
+- Removed `STATOR_PISTON_A/B_DIAMETER_MM` and `ROTOR_PISTON_A/B_DIAMETER_MM` from config.h; replaced with `DEFAULT_CARTRIDGE_ML_PER_MM`
+- Added full force limit system to `STATE_FEEDING` with configurable action (retract/hold/skip/abort) — detects cartridge bottom
+
+### Bug Fixes
+- Extended `reset_nvm` to clear slots 0-18 (was 0-15); now covers valve home-on-boot flags and cartridge ratio
+- Fixed `pressboi.set_strain_cal` → `fillhead.set_strain_cal` in press_report.html (done in prior session)
+
+### Definition Cleanup
+- Removed 7 duplicate/dead C++ files from `definition/` (commands.h, command_parser.cpp/h, events.h, responses.h, telemetry.h/cpp)
+- Removed `../definition` from compiler include paths in fillhead.cppproj
+- `definition/` now contains only JSON schemas and Python files
+
+### Definition Updates
+- Updated `commands.json`: replaced `inject_stator`/`inject_rotor` with `inject` (4 params) and `set_cartridge_ml_per_mm`
+- Updated `simulator.py`: new `inject` and `set_cartridge_ml_per_mm` handlers; added `cartridge_ml_per_mm` to default state
+
+---
+
 ## [0.2.0] - 2026-03-18
 
 ### Pinch Valve Homing

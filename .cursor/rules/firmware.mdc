@@ -1,0 +1,20 @@
+---
+description: ClearCore embedded firmware development rules
+globs: ["**/*.cpp", "**/*.h", "**/*.c"]
+alwaysApply: true
+---
+
+# Firmware Rules
+
+## Watchdog Safety
+- Never feed the watchdog during blocking waits or delays - it exists to catch blocking situations
+- Operations exceeding the 256ms watchdog timeout must use non-blocking state machine patterns
+
+## Non-Blocking Code
+- Avoid blocking calls in the main loop: no `Delay_ms()` in operational code, no `while` loops waiting on hardware state
+- Use state machine patterns for multi-step operations with timeout tracking
+- Use timestamp comparison (`Milliseconds()`) instead of blocking delays
+
+## Main Loop
+- Must complete within 256ms (watchdog timeout), target <10ms for responsive telemetry
+- All sub-operations must be non-blocking

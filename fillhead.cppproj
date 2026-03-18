@@ -276,6 +276,9 @@
     <Compile Include="inc\events.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="inc\force_sensor.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="Device_Startup\flash_with_bootloader.ld">
       <SubType>compile</SubType>
     </Compile>
@@ -307,6 +310,9 @@
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="src\events.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\force_sensor.cpp">
       <SubType>compile</SubType>
     </Compile>
     <None Include="Device_Startup\flash_without_bootloader.ld">

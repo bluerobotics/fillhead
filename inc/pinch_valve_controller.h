@@ -57,7 +57,7 @@ public:
 	 * @param nvmSlot The NVM byte offset for this valve's home-on-boot setting.
 	 * @param controller A pointer to the main `Fillhead` controller, used for reporting events.
 	 */
-	PinchValve(const char* name, MotorDriver* motor, Connector& homeSensor, int nvmSlot, Fillhead* controller);
+	PinchValve(const char* name, MotorDriver* motor, DigitalIn& homeSensor, int nvmSlot, Fillhead* controller);
 
 	/**
 	 * @brief Initializes the pinch valve motor, home sensor, and NVM settings.
@@ -180,7 +180,7 @@ private:
 
 	const char* m_name;
 	MotorDriver* m_motor;
-	Connector& m_homeSensor;
+	DigitalIn& m_homeSensor;
 	Fillhead* m_controller;
 	int m_nvmSlot;
 	bool m_homeOnBoot;

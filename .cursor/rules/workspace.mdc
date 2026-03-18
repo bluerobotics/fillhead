@@ -1,0 +1,17 @@
+---
+description: Workspace conventions for the Fillhead project
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Workspace Conventions
+
+## Plans
+- All plans must be stored in `.cursor/plans/` within the repository root
+- Plan files use the `.plan.md` extension
+- Reference architecture: Pressboi (C:\Users\emill\Documents\GitHub\pressboi) is the canonical reference for shared patterns (comms, state machine, watchdog, homing, definition system)
+
+## Architecture
+- Fillhead and Pressboi share the same ClearCore hardware platform (ATSAME53N19A)
+- Fillhead adds pinch valves, heater, vacuum, and volume-based injection on top of the shared base
+- Pressboi is the newer, more refined codebase -- prefer its patterns when aligning shared functionality

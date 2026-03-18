@@ -116,17 +116,6 @@ class CommsController {
      */
 	void reportEvent(const char* statusType, const char* message);
 
-    /**
-     * @brief Parses a raw command string into a `Command` enum.
-     * @details This function takes a raw string received from the network and
-     * converts it into a structured `Command` enum, which can be easily used
-     * in a switch-case statement by the main application logic.
-     * @param msg The raw command string to parse.
-     * @return The corresponding `Command` enum value, or `CMD_UNKNOWN` if the
-     *         command is not recognized.
-     */
-	Command parseCommand(const char* msg);
-
 	// Getters
 	/**
      * @brief Checks if the GUI application has been discovered.

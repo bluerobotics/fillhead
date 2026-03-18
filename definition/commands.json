@@ -1,376 +1,497 @@
 {
+    "discover_device": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Generic command for any device to respond to.",
+        "params": [],
+        "returns": ["discovery_response"]
+    },
+    "reset": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Clear error states and reset system to standby.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
     "enable": {
         "device": "fillhead",
         "target": "device",
+        "description": "Enable power to all motors.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to enable all motors."
+        "returns": ["done", "error"]
     },
     "disable": {
         "device": "fillhead",
         "target": "device",
+        "description": "Disable power to all motors.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to disable all motors."
-    },
-    "discover_device": {
-        "device": "fillhead",
-        "target": "device",
-        "params": [],
-        "returns": [
-            "discovery_response"
-        ],
-        "help": "Generic command for any device to respond to."
+        "returns": ["done", "error"]
     },
     "abort": {
         "device": "fillhead",
         "target": "device",
+        "description": "Halt all ongoing operations.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to halt all ongoing operations."
+        "returns": ["done", "error"]
     },
-    "clear_errors": {
+    "test_watchdog": {
         "device": "fillhead",
         "target": "device",
+        "description": "Test command that triggers the watchdog by blocking for 1 second.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
+        "returns": ["done", "error"]
+    },
+    "reboot_bootloader": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Reboots the controller into ClearCore USB bootloader mode for firmware flashing.",
+        "params": [],
+        "returns": ["info", "error"]
+    },
+    "dump_nvm": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Dump non-volatile memory contents to the GUI.",
+        "params": [],
+        "returns": ["info", "done", "error"]
+    },
+    "reset_nvm": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Restore non-volatile memory to factory defaults.",
+        "params": [],
+        "returns": ["info", "done", "error"]
+    },
+    "dump_error_log": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Dump internal error log buffer for diagnostics.",
+        "params": [],
+        "returns": ["info", "done", "error"]
+    },
+    "set_force_mode": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Sets the force sensing mode (persisted to NVM).",
+        "params": [
+            { "parameter": "mode", "type": "string", "enum": ["motor_torque", "load_cell"], "help": "motor_torque = use motor torque calculation (no load cell needed), load_cell = use actual load cell sensor" }
         ],
-        "help": "Command to clear any existing fault states."
+        "returns": ["done", "error"]
+    },
+    "set_force_offset": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set force calibration offset and save to NVM. Routes to load cell or motor torque calibration based on current force mode.",
+        "params": [
+            { "parameter": "offset", "type": "float", "help": "In load_cell mode: offset in kg. In motor_torque mode: torque% intercept (default 1.04)" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_force_zero": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Adjusts the current force calibration offset so the present force reading becomes zero.",
+        "params": [],
+        "returns": ["info", "done", "error"]
+    },
+    "set_force_scale": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set force sensor scale/linearity factor and save to NVM.",
+        "params": [
+            { "parameter": "scale", "type": "float", "help": "In load_cell mode: kg per raw ADC unit. In motor_torque mode: torque% per kg slope (default 0.0335)" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_strain_cal": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set machine strain energy compensation coefficients (force vs distance polynomial) and save to NVM.",
+        "params": [
+            { "parameter": "x4", "type": "float", "unit": "x^4", "help": "Coefficient for x^4 term" },
+            { "parameter": "x3", "type": "float", "unit": "x^3", "help": "Coefficient for x^3 term" },
+            { "parameter": "x2", "type": "float", "unit": "x^2", "help": "Coefficient for x^2 term" },
+            { "parameter": "x1", "type": "float", "unit": "x", "help": "Coefficient for x term" },
+            { "parameter": "c", "type": "float", "unit": "C", "help": "Constant term" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_polarity": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Sets the coordinate system polarity (normal or inverted) and saves to NVM. Inverted flips home direction and all moves.",
+        "params": [
+            { "parameter": "polarity", "type": "string", "enum": ["normal", "inverted"], "help": "normal = standard direction, inverted = all motions and home reversed" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "home_on_boot": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Sets whether the press should automatically home on startup and saves to NVM.",
+        "params": [
+            { "parameter": "enabled", "type": "string", "enum": ["true", "false"], "help": "true = auto-home on boot, false = skip homing on boot" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_press_threshold": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Sets the force threshold for energy/startpoint recording and saves to NVM.",
+        "params": [
+            { "parameter": "threshold", "unit": "kg", "type": "float", "help": "Force threshold in kg (0.1 to 50.0). Default is 2.0 kg." }
+        ],
+        "returns": ["done", "error"]
+    },
+    "home": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Homes the press axis to its zero position.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "move_abs": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Moves the press to an absolute position with speed and force limits.",
+        "params": [
+            { "parameter": "position", "unit": "mm", "type": "float" },
+            { "parameter": "speed", "unit": "mm/s", "type": "float" },
+            { "parameter": "force", "unit": "kg", "type": "float", "help": "In motor_torque mode: 50-2000 kg. In load_cell mode: 0.2-1000 kg." },
+            { "parameter": "force_action", "type": "string", "enum": ["retract", "hold", "skip", "abort"], "optional": true, "default": "hold", "help": "Action when force limit reached: retract (retracts to retract position on ANY completion and returns done), hold (stops and waits), skip (ignores limit), abort (retracts ONLY if force limit hit, throws error to halt script)" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "move_inc": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Moves the press by a relative distance with speed and force limits.",
+        "params": [
+            { "parameter": "distance", "unit": "mm", "type": "float" },
+            { "parameter": "speed", "unit": "mm/s", "type": "float" },
+            { "parameter": "force", "unit": "kg", "type": "float", "help": "In motor_torque mode: 50-2000 kg. In load_cell mode: 0.2-1000 kg." },
+            { "parameter": "force_action", "type": "string", "enum": ["retract", "hold", "skip"], "optional": true, "default": "hold" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_retract": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Sets the retract position for the press and saves to NVM.",
+        "params": [
+            { "parameter": "position", "unit": "mm", "type": "float" },
+            { "parameter": "speed", "unit": "mm/s", "type": "float", "optional": true, "default": 25.0, "help": "Optional retract speed to store for future retract commands." }
+        ],
+        "returns": ["done", "error"]
+    },
+    "retract": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Moves the press to the preset retract position with optional speed.",
+        "params": [
+            { "parameter": "speed", "unit": "mm/s", "type": "float", "optional": true, "default": 25.0 }
+        ],
+        "returns": ["done", "error"]
+    },
+    "pause": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Pauses any active move operation.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "resume": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Resumes a paused move operation.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "cancel": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Cancels any active move operation and returns to standby.",
+        "params": [],
+        "returns": ["done", "error"]
     },
     "inject_stator": {
         "device": "fillhead",
         "target": "device",
+        "description": "Dispense a specific volume using the stator (5:1) configuration.",
         "params": [
-            {
-                "parameter": "volume",
-                "unit": "ml",
-                "type": "float"
-            },
-            {
-                "parameter": "speed",
-                "unit": "ml/s",
-                "type": "float",
-                "optional": true
-            }
+            { "parameter": "volume", "unit": "ml", "type": "float" },
+            { "parameter": "speed", "unit": "ml/s", "type": "float", "optional": true }
         ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to dispense a specific volume using the stator (5:1) configuration."
+        "returns": ["done", "error"]
     },
     "inject_rotor": {
         "device": "fillhead",
         "target": "device",
+        "description": "Dispense a specific volume using the rotor (1:1) configuration.",
         "params": [
-            {
-                "parameter": "volume",
-                "unit": "ml",
-                "type": "float"
-            },
-            {
-                "parameter": "speed",
-                "unit": "ml/s",
-                "type": "float",
-                "optional": true
-            }
+            { "parameter": "volume", "unit": "ml", "type": "float" },
+            { "parameter": "speed", "unit": "ml/s", "type": "float", "optional": true }
         ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to dispense a specific volume using the rotor (1:1) configuration."
+        "returns": ["done", "error"]
     },
     "jog_move": {
         "device": "fillhead",
         "target": "device",
+        "description": "Jog the injector motors by a relative distance.",
         "params": [
-            {
-                "parameter": "distance",
-                "unit": "mm",
-                "type": "float"
-            }
+            { "parameter": "distance", "unit": "mm", "type": "float" }
         ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to jog the injector motors by a relative distance."
+        "returns": ["done", "error"]
     },
     "machine_home": {
         "device": "fillhead",
         "target": "device",
+        "description": "Home the main machine axis.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to home the main machine axis."
+        "returns": ["done", "error"]
+    },
+    "machine_home_move": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Home the main machine axis and move to working position.",
+        "params": [],
+        "returns": ["done", "error"]
     },
     "cartridge_home": {
         "device": "fillhead",
         "target": "device",
+        "description": "Home the injector against the cartridge.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to home the injector against the cartridge."
+        "returns": ["done", "error"]
+    },
+    "cartridge_home_move": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Home the injector against the cartridge and move to working position.",
+        "params": [],
+        "returns": ["done", "error"]
     },
     "move_to_cartridge_home": {
         "device": "fillhead",
         "target": "device",
+        "description": "Move the injector to the cartridge home position.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to move the injector to the cartridge home position."
+        "returns": ["done", "error"]
     },
     "move_to_cartridge_retract": {
         "device": "fillhead",
         "target": "device",
+        "description": "Retract the injector a specified distance from cartridge home.",
         "params": [
-            {
-                "parameter": "distance",
-                "unit": "mm",
-                "type": "float"
-            }
+            { "parameter": "distance", "unit": "mm", "type": "float" }
         ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to retract the injector a specified distance from cartridge home."
+        "returns": ["done", "error"]
     },
     "pause_injection": {
         "device": "fillhead",
         "target": "device",
+        "description": "Pause an ongoing injection.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to pause an ongoing injection."
+        "returns": ["done", "error"]
     },
     "resume_injection": {
         "device": "fillhead",
         "target": "device",
+        "description": "Resume a paused injection.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to resume a paused injection."
+        "returns": ["done", "error"]
     },
     "cancel_injection": {
         "device": "fillhead",
         "target": "device",
+        "description": "Cancel an ongoing injection.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to cancel an ongoing injection."
-    },
-    "vacuum_on": {
-        "device": "fillhead",
-        "target": "device",
-        "params": [
-            {
-                "parameter": "target",
-                "unit": "psi",
-                "type": "float",
-                "optional": true
-            }
-        ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to turn the vacuum pump on."
-    },
-    "vacuum_off": {
-        "device": "fillhead",
-        "target": "device",
-        "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to turn the vacuum pump off."
-    },
-    "vacuum_leak_test": {
-        "device": "fillhead",
-        "target": "device",
-        "params": [
-            {
-                "parameter": "delta",
-                "unit": "psi",
-                "type": "float",
-                "optional": true
-            },
-            {
-                "parameter": "duration",
-                "unit": "s",
-                "type": "float",
-                "optional": true
-            }
-        ],
-        "returns": [
-            "passed",
-            "failed"
-        ],
-        "help": "Command to initiate a vacuum leak test."
-    },
-    "heater_on": {
-        "device": "fillhead",
-        "target": "device",
-        "params": [
-            {
-                "parameter": "setpoint",
-                "unit": "C",
-                "type": "float",
-                "optional": true
-            }
-        ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to turn the heater on."
-    },
-    "heater_off": {
-        "device": "fillhead",
-        "target": "device",
-        "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to turn the heater off."
+        "returns": ["done", "error"]
     },
     "injection_valve_home": {
         "device": "fillhead",
         "target": "device",
+        "description": "Home the injection valve.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to home the injection valve."
+        "returns": ["done", "error"]
+    },
+    "injection_valve_home_untubed": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Home the injection valve in untubed configuration.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "injection_valve_home_tubed": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Home the injection valve in tubed configuration.",
+        "params": [],
+        "returns": ["done", "error"]
     },
     "injection_valve_open": {
         "device": "fillhead",
         "target": "device",
+        "description": "Open the injection valve.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to open the injection valve."
+        "returns": ["done", "error"]
     },
     "injection_valve_close": {
         "device": "fillhead",
         "target": "device",
+        "description": "Close the injection valve.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to close the injection valve."
+        "returns": ["done", "error"]
     },
     "injection_valve_jog": {
         "device": "fillhead",
         "target": "device",
+        "description": "Jog the injection valve motor.",
         "params": [
-            {
-                "parameter": "distance",
-                "unit": "mm",
-                "type": "float"
-            }
+            { "parameter": "distance", "unit": "mm", "type": "float" }
         ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to jog the injection valve motor."
+        "returns": ["done", "error"]
     },
     "vacuum_valve_home": {
         "device": "fillhead",
         "target": "device",
+        "description": "Home the vacuum valve.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to home the vacuum valve."
+        "returns": ["done", "error"]
+    },
+    "vacuum_valve_home_untubed": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Home the vacuum valve in untubed configuration.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "vacuum_valve_home_tubed": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Home the vacuum valve in tubed configuration.",
+        "params": [],
+        "returns": ["done", "error"]
     },
     "vacuum_valve_open": {
         "device": "fillhead",
         "target": "device",
+        "description": "Open the vacuum valve.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to open the vacuum valve."
+        "returns": ["done", "error"]
     },
     "vacuum_valve_close": {
         "device": "fillhead",
         "target": "device",
+        "description": "Close the vacuum valve.",
         "params": [],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to close the vacuum valve."
+        "returns": ["done", "error"]
     },
     "vacuum_valve_jog": {
         "device": "fillhead",
         "target": "device",
+        "description": "Jog the vacuum valve motor.",
         "params": [
-            {
-                "parameter": "distance",
-                "unit": "mm",
-                "type": "float"
-            }
+            { "parameter": "distance", "unit": "mm", "type": "float" }
         ],
-        "returns": [
-            "done",
-            "error"
-        ],
-        "help": "Command to jog the vacuum valve motor."
+        "returns": ["done", "error"]
     },
-    "test_command": {
+    "heater_on": {
         "device": "fillhead",
         "target": "device",
-        "description": "A test command!",
+        "description": "Turn the heater on.",
         "params": [
-            {
-                "parameter": "position",
-                "type": "float",
-                "unit": "mm"
-            },
-            {
-                "parameter": "action",
-                "type": "string"
-            }
+            { "parameter": "setpoint", "unit": "C", "type": "float", "optional": true }
         ],
-        "returns": [
-            "done",
-            "error"
-        ]
+        "returns": ["done", "error"]
+    },
+    "heater_off": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Turn the heater off.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "set_heater_gains": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set PID gains for the heater controller and save to NVM.",
+        "params": [
+            { "parameter": "kp", "type": "float", "help": "Proportional gain" },
+            { "parameter": "ki", "type": "float", "help": "Integral gain" },
+            { "parameter": "kd", "type": "float", "help": "Derivative gain" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_heater_setpoint": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set the heater temperature setpoint and save to NVM.",
+        "params": [
+            { "parameter": "setpoint", "unit": "C", "type": "float" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "vacuum_on": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Turn the vacuum pump on.",
+        "params": [
+            { "parameter": "target", "unit": "psi", "type": "float", "optional": true }
+        ],
+        "returns": ["done", "error"]
+    },
+    "vacuum_off": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Turn the vacuum pump off.",
+        "params": [],
+        "returns": ["done", "error"]
+    },
+    "vacuum_leak_test": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Initiate a vacuum leak test.",
+        "params": [
+            { "parameter": "delta", "unit": "psi", "type": "float", "optional": true },
+            { "parameter": "duration", "unit": "s", "type": "float", "optional": true }
+        ],
+        "returns": ["passed", "failed"]
+    },
+    "set_vacuum_target": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set the vacuum target pressure and save to NVM.",
+        "params": [
+            { "parameter": "target", "unit": "psi", "type": "float" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_vacuum_timeout_s": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set the vacuum timeout duration and save to NVM.",
+        "params": [
+            { "parameter": "timeout", "unit": "s", "type": "float" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_leak_test_delta": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set the maximum pressure delta for vacuum leak test and save to NVM.",
+        "params": [
+            { "parameter": "delta", "unit": "psi", "type": "float" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "set_leak_test_duration_s": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set the leak test duration and save to NVM.",
+        "params": [
+            { "parameter": "duration", "unit": "s", "type": "float" }
+        ],
+        "returns": ["done", "error"]
     }
 }

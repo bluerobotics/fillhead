@@ -44,7 +44,7 @@
  * @{
  */
 #define STATUS_MESSAGE_BUFFER_SIZE      256       ///< Standard buffer size for composing status and error messages.
-#define POST_ABORT_DELAY_MS             100       ///< Delay in milliseconds after an abort command to allow motors to come to a complete stop.
+#define FIRMWARE_VERSION                "0.1.0"
 /** @} */
 
 //==================================================================================================
@@ -144,6 +144,13 @@
 #define PIN_HEATER_RELAY                ConnectorIO1 ///< Digital output to control the heater relay.
 #define PIN_VACUUM_RELAY                ConnectorIO0 ///< Digital output to control the vacuum pump relay.
 #define PIN_VACUUM_VALVE_RELAY          ConnectorIO5 ///< Digital output to control the vacuum solenoid valve relay.
+
+// --- Home Sensors (Hall Effect) ---
+// Sensor PN: 326161-0053
+#define HOME_SENSOR_M0                  ConnectorDI7 ///< Motor A (M0) home sensor on DI7.
+#define HOME_SENSOR_M1                  ConnectorDI6 ///< Motor B (M1) home sensor on DI6.
+#define HOME_SENSOR_ACTIVE_STATE        true         ///< true = sensor outputs HIGH when triggered (active high).
+#define HOME_SENSOR_FILTER_MS           2            ///< Debounce filter length in milliseconds for home sensors.
 /** @} */
 
 //==================================================================================================
@@ -187,6 +194,33 @@
 #define DEFAULT_LEAK_TEST_DURATION_MS   10000     ///< Default duration (in ms) for a leak test.
 #define VACUUM_SETTLE_TIME_S            2.0f      ///< Time (in s) to let pressure stabilize before starting a leak test measurement.
 /** @} */
+/** @} */
+
+//==================================================================================================
+// Force Sensor Configuration
+//==================================================================================================
+/**
+ * @name Force Sensor Configuration
+ * @{
+ */
+#define FORCE_SENSOR_ENABLED                true      ///< Enable/disable force sensor functionality.
+#define FORCE_SENSOR_SCALE_FACTOR           -0.00023076f  ///< Default scale factor: kg = raw_adc × scale.
+#define FORCE_SENSOR_OFFSET_KG              6.5f     ///< Default offset (kg) for calibration.
+
+/** Machine strain compensation coefficients (force vs. distance polynomial) */
+#define MACHINE_STRAIN_COEFF_X4            -4617.6757f     ///< x^4 coefficient
+#define MACHINE_STRAIN_COEFF_X3             6910.4430f     ///< x^3 coefficient
+#define MACHINE_STRAIN_COEFF_X2            -1585.3214f     ///< x^2 coefficient
+#define MACHINE_STRAIN_COEFF_X1             320.1528f      ///< x coefficient
+#define MACHINE_STRAIN_COEFF_C              -0.2376f       ///< Constant term
+#define MACHINE_STRAIN_MAX_DEFLECTION_MM     5.0f          ///< Max expected machine flex deflection
+#define MACHINE_STRAIN_CONTACT_FORCE_KG      3.0f          ///< Force threshold to declare contact
+#define RETRACT_DEFAULT_SPEED_MMS           25.0f          ///< Default retract speed when none specified
+#define FORCE_SENSOR_MIN_KG                 -10.0f    ///< Minimum valid force reading (kg).
+#define FORCE_SENSOR_MAX_KG                 1200.0f   ///< Maximum expected force (kg).
+#define FORCE_SENSOR_MAX_SAFETY_FACTOR      1.2f      ///< Safety factor for maximum force.
+#define FORCE_SENSOR_MAX_LIMIT_KG           (FORCE_SENSOR_MAX_KG * FORCE_SENSOR_MAX_SAFETY_FACTOR) ///< Calculated max limit.
+#define FORCE_SENSOR_TIMEOUT_MS             1000      ///< Time (ms) without readings before disconnected.
 /** @} */
 
 //==================================================================================================
@@ -308,6 +342,17 @@
 #define FEED_DEFAULT_ACCEL_SPS2             (int)(FEED_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_INJECTOR)   ///< Default feed acceleration in steps/sec^2.
 #define INJECT_DEFAULT_VELOCITY_MMS         0.625f    ///< Fallback velocity if a command provides an invalid value.
 #define INJECT_DEFAULT_VELOCITY_SPS         (int)(INJECT_DEFAULT_VELOCITY_MMS * STEPS_PER_MM_INJECTOR) ///< Fallback velocity in steps/sec.
+/** @} */
+
+/**
+ * @name Move Defaults (Pressboi-compatible)
+ * @{
+ */
+#define MOVE_DEFAULT_TORQUE_PERCENT         30        ///< Default torque limit (%) for general moves.
+#define MOVE_DEFAULT_VELOCITY_MMS           6.25f     ///< Default velocity (mm/s) for general moves.
+#define MOVE_DEFAULT_ACCEL_MMSS             62.5f     ///< Default acceleration (mm/s^2) for general moves.
+#define MOVE_DEFAULT_VELOCITY_SPS           (int)(MOVE_DEFAULT_VELOCITY_MMS * STEPS_PER_MM_INJECTOR) ///< Default velocity in steps/sec.
+#define MOVE_DEFAULT_ACCEL_SPS2             (int)(MOVE_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_INJECTOR)   ///< Default acceleration in steps/sec^2.
 /** @} */
 /** @} */
 

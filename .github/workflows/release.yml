@@ -1,0 +1,59 @@
+name: Release
+
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          # Extract the section for this version from CHANGELOG.md
+          awk "/## \[${VERSION#v}\]/{flag=1; next} /## \[/{flag=0} flag" CHANGELOG.md > release_notes.md
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Check for pre-built firmware
+        id: check_firmware
+        run: |
+          if [ -f "Debug/fillhead.bin" ] && [ -f "Debug/fillhead.uf2" ]; then
+            echo "FIRMWARE_EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "FIRMWARE_EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ steps.get_version.outputs.VERSION }}
+          body: ${{ steps.changelog.outputs.CHANGELOG }}
+          files: |
+            Debug/fillhead.bin
+            Debug/fillhead.uf2
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Note about firmware binaries
+        if: steps.check_firmware.outputs.FIRMWARE_EXISTS == 'false'
+        run: |
+          echo "⚠️  No pre-built firmware binaries found in Debug/"
+          echo "Build the firmware locally and commit the .bin and .uf2 files before tagging."

@@ -1,17 +1,14 @@
 /**
  * @file telemetry.h
  * @brief Telemetry structure and construction interface for the Fillhead controller.
- * @details AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
- * Generated from telemetry.json on 2025-11-03 11:25:17
- * 
- * This header defines the complete telemetry data structure for the Fillhead.
- * All telemetry fields are assembled in one centralized location.
- * To modify telemetry fields, edit telemetry.json and regenerate this file.
+ * @details Matches telemetry.json schema. Fillhead = Pressboi + pinch valves + heater + vacuum + injection.
+ * All telemetry fields use FILLHEAD_TELEM prefix in messages.
  */
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 //==================================================================================================
 // Telemetry Field Keys
@@ -23,60 +20,105 @@
  * Format: "FILLHEAD_TELEM: field1:value1,field2:value2,..."
  * @{
  */
-#define TELEM_KEY_MAIN_STATE                     "main_state               "  ///< Overall fillhead system state
-#define TELEM_KEY_INJECTOR_STATE                 "injector_state           "  ///< Current operational state of the injector motors
-#define TELEM_KEY_INJ_VALVE_STATE                "inj_valve_state          "  ///< Current state of the injection pinch valve
-#define TELEM_KEY_VAC_VALVE_STATE                "vac_valve_state          "  ///< Current state of the vacuum pinch valve
-#define TELEM_KEY_HEATER_STATE                   "heater_state             "  ///< Heater PID control status
-#define TELEM_KEY_VACUUM_STATE                   "vacuum_state             "  ///< Current vacuum system operation state
-#define TELEM_KEY_INJECTOR_TORQUE                "injector_torque          "  ///< Current motor torque percentage for injector
-#define TELEM_KEY_INJECTOR_HOMED                 "injector_homed           "  ///< Indicates if injector has been homed to machine zero
-#define TELEM_KEY_INJECTION_CUMULATIVE_ML        "injection_cumulative_ml  "  ///< Total volume dispensed since last cartridge home
-#define TELEM_KEY_INJECTION_ACTIVE_ML            "injection_active_ml      "  ///< Volume dispensed in current injection operation
-#define TELEM_KEY_INJECTION_TARGET_ML            "injection_target_ml      "  ///< Target volume for current injection operation
-#define TELEM_KEY_MOTORS_ENABLED                 "motors_enabled           "  ///< Global motor power enable status
-#define TELEM_KEY_INJ_VALVE_POS                  "inj_valve_pos            "  ///< Current position of injection valve actuator
-#define TELEM_KEY_INJ_VALVE_TORQUE               "inj_valve_torque         "  ///< Current motor torque percentage for injection valve
-#define TELEM_KEY_INJ_VALVE_HOMED                "inj_valve_homed          "  ///< Indicates if injection valve has been homed
-#define TELEM_KEY_VAC_VALVE_POS                  "vac_valve_pos            "  ///< Current position of vacuum valve actuator
-#define TELEM_KEY_VAC_VALVE_MOTOR_TORQUE         "vac_valve_motor_torque   "  ///< Current motor torque percentage for vacuum valve
-#define TELEM_KEY_VAC_VALVE_HOMED                "vac_valve_homed          "  ///< Indicates if vacuum valve has been homed
-#define TELEM_KEY_TEMP_C                         "temp_c                   "  ///< Current material temperature from thermocouple
-#define TELEM_KEY_HEATER_SETPOINT                "heater_setpoint          "  ///< Target temperature setpoint for PID controller
-#define TELEM_KEY_VACUUM_PSIG                    "vacuum_psig              "  ///< Current vacuum pressure reading
+#define TELEM_KEY_MAIN_STATE                     "main_state"
+#define TELEM_KEY_INJECTOR_STATE                 "injector_state"
+#define TELEM_KEY_INJ_VALVE_STATE                "inj_valve_state"
+#define TELEM_KEY_VAC_VALVE_STATE                "vac_valve_state"
+#define TELEM_KEY_HEATER_STATE                   "heater_state"
+#define TELEM_KEY_VACUUM_STATE                   "vacuum_state"
+#define TELEM_KEY_INJECTOR_TORQUE                "injector_torque"
+#define TELEM_KEY_INJECTOR_HOMED                 "injector_homed"
+#define TELEM_KEY_INJECTION_CUMULATIVE_ML        "injection_cumulative_ml"
+#define TELEM_KEY_INJECTION_ACTIVE_ML            "injection_active_ml"
+#define TELEM_KEY_INJECTION_TARGET_ML            "injection_target_ml"
+#define TELEM_KEY_MOTORS_ENABLED                 "motors_enabled"
+#define TELEM_KEY_INJ_VALVE_POS                  "inj_valve_pos"
+#define TELEM_KEY_INJ_VALVE_TORQUE                "inj_valve_torque"
+#define TELEM_KEY_INJ_VALVE_HOMED                 "inj_valve_homed"
+#define TELEM_KEY_VAC_VALVE_POS                  "vac_valve_pos"
+#define TELEM_KEY_VAC_VALVE_MOTOR_TORQUE         "vac_valve_motor_torque"
+#define TELEM_KEY_VAC_VALVE_HOMED                "vac_valve_homed"
+#define TELEM_KEY_TEMP_C                         "temp_c"
+#define TELEM_KEY_HEATER_SETPOINT                "heater_setpoint"
+#define TELEM_KEY_VACUUM_PSIG                    "vacuum_psig"
+/* Pressboi-derived fields (Fillhead prefix in message) */
+#define TELEM_KEY_FORCE_LOAD_CELL                "force_load_cell"
+#define TELEM_KEY_FORCE_MOTOR_TORQUE             "force_motor_torque"
+#define TELEM_KEY_FORCE_LIMIT                    "force_limit"
+#define TELEM_KEY_FORCE_SOURCE                   "force_source"
+#define TELEM_KEY_FORCE_ADC_RAW                  "force_adc_raw"
+#define TELEM_KEY_FORCE_MODE                     "force_mode"
+#define TELEM_KEY_JOULES                         "joules"
+#define TELEM_KEY_ENABLED0                       "enabled0"
+#define TELEM_KEY_ENABLED1                       "enabled1"
+#define TELEM_KEY_CURRENT_POS                    "current_pos"
+#define TELEM_KEY_RETRACT_POS                    "retract_pos"
+#define TELEM_KEY_TARGET_POS                     "target_pos"
+#define TELEM_KEY_ENDPOINT                       "endpoint"
+#define TELEM_KEY_STARTPOINT                     "startpoint"
+#define TELEM_KEY_PRESS_THRESHOLD                "press_threshold"
+#define TELEM_KEY_TORQUE_AVG                     "torque_avg"
+#define TELEM_KEY_HOMED                          "homed"
+#define TELEM_KEY_HOME_SENSOR_M0                 "home_sensor_m0"
+#define TELEM_KEY_HOME_SENSOR_M1                 "home_sensor_m1"
+#define TELEM_KEY_POLARITY                       "polarity"
 /** @} */
 
 //==================================================================================================
 // Telemetry Data Structure
 //==================================================================================================
 
+#define TELEM_STRING_MAX 32
+
 /**
  * @struct TelemetryData
  * @brief Complete telemetry state for the Fillhead device.
- * @details This structure contains all telemetry values that are transmitted to the host.
+ * @details Contains Fillhead-specific fields plus Pressboi-derived fields (force, position, etc.).
  */
 typedef struct {
-    int32_t      main_state                    ; ///< Overall fillhead system state
-    int32_t      injector_state                ; ///< Current operational state of the injector motors
-    int32_t      inj_valve_state               ; ///< Current state of the injection pinch valve
-    int32_t      vac_valve_state               ; ///< Current state of the vacuum pinch valve
-    int32_t      heater_state                  ; ///< Heater PID control status
-    int32_t      vacuum_state                  ; ///< Current vacuum system operation state
-    float        injector_torque               ; ///< Current motor torque percentage for injector
-    int32_t      injector_homed                ; ///< Indicates if injector has been homed to machine zero
-    float        injection_cumulative_ml       ; ///< Total volume dispensed since last cartridge home
-    float        injection_active_ml           ; ///< Volume dispensed in current injection operation
-    float        injection_target_ml           ; ///< Target volume for current injection operation
-    bool         motors_enabled                ; ///< Global motor power enable status
-    float        inj_valve_pos                 ; ///< Current position of injection valve actuator
-    float        inj_valve_torque              ; ///< Current motor torque percentage for injection valve
-    bool         inj_valve_homed               ; ///< Indicates if injection valve has been homed
-    float        vac_valve_pos                 ; ///< Current position of vacuum valve actuator
-    float        vac_valve_motor_torque        ; ///< Current motor torque percentage for vacuum valve
-    bool         vac_valve_homed               ; ///< Indicates if vacuum valve has been homed
-    float        temp_c                        ; ///< Current material temperature from thermocouple
-    float        heater_setpoint               ; ///< Target temperature setpoint for PID controller
-    float        vacuum_psig                   ; ///< Current vacuum pressure reading
+    /* Fillhead core */
+    char         main_state[TELEM_STRING_MAX];
+    int32_t      injector_state;
+    int32_t      inj_valve_state;
+    int32_t      vac_valve_state;
+    int32_t      heater_state;
+    int32_t      vacuum_state;
+    float        injector_torque;
+    int32_t      injector_homed;
+    float        injection_cumulative_ml;
+    float        injection_active_ml;
+    float        injection_target_ml;
+    bool         motors_enabled;
+    float        inj_valve_pos;
+    float        inj_valve_torque;
+    bool         inj_valve_homed;
+    float        vac_valve_pos;
+    float        vac_valve_motor_torque;
+    bool         vac_valve_homed;
+    float        temp_c;
+    float        heater_setpoint;
+    float        vacuum_psig;
+    /* Pressboi-derived (force/position) */
+    float        force_load_cell;
+    float        force_motor_torque;
+    float        force_limit;
+    char         force_source[TELEM_STRING_MAX];
+    int32_t      force_adc_raw;
+    char         force_mode[TELEM_STRING_MAX];
+    float        joules;
+    int32_t      enabled0;
+    int32_t      enabled1;
+    float        current_pos;
+    float        retract_pos;
+    float        target_pos;
+    float        endpoint;
+    float        startpoint;
+    float        press_threshold;
+    float        torque_avg;
+    int32_t      homed;
+    int32_t      home_sensor_m0;
+    int32_t      home_sensor_m1;
+    char         polarity[TELEM_STRING_MAX];
 } TelemetryData;
 
 //==================================================================================================
@@ -95,7 +137,7 @@ void telemetry_init(TelemetryData* data);
  * @param buffer Output buffer to write telemetry message
  * @param buffer_size Size of output buffer
  * @return Number of characters written (excluding null terminator)
- * 
+ *
  * @details Constructs a message in the format: "FILLHEAD_TELEM: field1:value1,field2:value2,..."
  */
 int telemetry_build_message(const TelemetryData* data, char* buffer, size_t buffer_size);
@@ -103,7 +145,7 @@ int telemetry_build_message(const TelemetryData* data, char* buffer, size_t buff
 /**
  * @brief Send telemetry message via Serial.
  * @param data Pointer to TelemetryData structure containing current values
- * 
+ *
  * @details Builds and transmits the complete telemetry message.
  */
 void telemetry_send(const TelemetryData* data);

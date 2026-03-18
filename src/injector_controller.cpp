@@ -5,67 +5,136 @@
  * @brief Implements the controller for the dual-motor injector system.
  *
  * @details This file provides the concrete implementation for the `Injector` class.
- * It contains the logic for the hierarchical state machines that manage homing,
- * feeding, and jogging operations. It also includes the command handlers, motion
- * control logic, and telemetry reporting for the injector system.
+ * It is a SUPERSET of Pressboi's MotorController merged with the original Fillhead
+ * injector controller. It contains the logic for the hierarchical state machines that
+ * manage homing (gantry-squaring with hall sensors), feeding (injection), general
+ * moves (move_abs/move_inc), and jogging operations. It also includes command handlers,
+ * motion control logic, NVM persistence, force/torque calibration, and telemetry.
  */
 
 //==================================================================================================
 // --- Includes ---
 //==================================================================================================
 #include "injector_controller.h"
-#include "fillhead.h" // Include full header for Fillhead
+#include "fillhead.h"
+#include "events.h"
+#include "error_log.h"
+#include "NvmManager.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <climits>
+
+using ClearCore::NvmManager;
 
 //==================================================================================================
-// --- Class Implementation ---
+// --- Constructor ---
 //==================================================================================================
 
-/**
- * @brief Constructs the Injector controller.
- */
 Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controller) {
     m_motorA = motorA;
     m_motorB = motorB;
     m_controller = controller;
 
-    // Initialize state machine
     m_state = STATE_STANDBY;
     m_homingState = HOMING_NONE;
     m_homingPhase = HOMING_PHASE_IDLE;
     m_feedState = FEED_STANDBY;
+    m_moveState = MOVE_STANDBY;
+    m_enableState = ENABLE_IDLE;
 
     m_homingMachineDone = false;
     m_homingCartridgeDone = false;
     m_homingStartTime = 0;
     m_isEnabled = true;
+    m_retractDone = false;
+    m_pausedMessageSent = false;
+    m_originalMoveCommand = nullptr;
+    m_enableStartTime = 0;
 
-    // Initialize from config file constants
+    m_axisAHomeSensorTriggered = false;
+    m_axisBHomeSensorTriggered = false;
+    m_axisAStopped = false;
+    m_axisBStopped = false;
+    m_homeSensorsInitialized = false;
+
+    strcpy(m_force_mode, "motor_torque");
+    m_motor_torque_scale = 0.0335f;
+    m_motor_torque_offset = 1.04f;
+
+    strcpy(m_polarity, "normal");
+    m_home_on_boot = true;
+
     m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
     m_torqueOffset = DEFAULT_INJECTOR_TORQUE_OFFSET;
-    m_feedDefaultTorquePercent = FEED_DEFAULT_TORQUE_PERCENT;
-    m_feedDefaultVelocitySPS = FEED_DEFAULT_VELOCITY_SPS;
-    m_feedDefaultAccelSPS2 = FEED_DEFAULT_ACCEL_SPS2;
-
     m_smoothedTorqueValue0 = 0.0f;
     m_smoothedTorqueValue1 = 0.0f;
     m_firstTorqueReading0 = true;
     m_firstTorqueReading1 = true;
+
     m_machineHomeReferenceSteps = 0;
     m_cartridgeHomeReferenceSteps = 0;
+    m_retractReferenceSteps = LONG_MIN;
+    m_retract_position_mm = 0.0f;
+    m_press_threshold_kg = 2.0f;
+
     m_cumulative_dispensed_ml = 0.0f;
+    m_cumulative_distance_mm = 0.0f;
+
+    m_feedDefaultTorquePercent = FEED_DEFAULT_TORQUE_PERCENT;
+    m_feedDefaultVelocitySPS = FEED_DEFAULT_VELOCITY_SPS;
+    m_feedDefaultAccelSPS2 = FEED_DEFAULT_ACCEL_SPS2;
+
+    m_moveDefaultTorquePercent = MOVE_DEFAULT_TORQUE_PERCENT;
+    m_moveDefaultVelocitySPS = MOVE_DEFAULT_VELOCITY_SPS;
+    m_moveDefaultAccelSPS2 = MOVE_DEFAULT_ACCEL_SPS2;
+
+    m_homingDistanceSteps = 0;
+    m_homingBackoffSteps = 0;
+    m_homingRapidSps = 0;
+    m_homingTouchSps = 0;
+    m_homingBackoffSps = 0;
+    m_homingAccelSps2 = 0;
+
     m_feedStartTime = 0;
+    m_moveStartTime = 0;
+
+    m_active_op_target_position_steps = 0;
+    m_joules = 0.0;
+    m_endpoint_mm = 0.0f;
+    m_press_startpoint_mm = 0.0f;
+    m_prev_position_mm = 0.0;
+
+    m_machineStrainBaselinePosMm = 0.0;
+    m_prevMachineDeflectionMm = 0.0;
+    m_prevTotalDeflectionMm = 0.0;
+    m_machineEnergyJ = 0.0;
+    m_machineStrainContactActive = false;
+    m_jouleIntegrationActive = false;
+    m_forceLimitTriggered = false;
+    m_prevForceValid = false;
+    m_prevForceKg = 0.0f;
+
+    m_machineStrainCoeffs[0] = MACHINE_STRAIN_COEFF_X4;
+    m_machineStrainCoeffs[1] = MACHINE_STRAIN_COEFF_X3;
+    m_machineStrainCoeffs[2] = MACHINE_STRAIN_COEFF_X2;
+    m_machineStrainCoeffs[3] = MACHINE_STRAIN_COEFF_X1;
+    m_machineStrainCoeffs[4] = MACHINE_STRAIN_COEFF_C;
+
+    m_retractSpeedMms = RETRACT_DEFAULT_SPEED_MMS;
 
     fullyResetActiveDispenseOperation();
+    fullyResetActiveMove();
     m_activeFeedCommand = nullptr;
     m_activeJogCommand = nullptr;
+    m_activeMoveCommand = nullptr;
 }
 
-/**
- * @brief Performs one-time setup and configuration of the injector motors.
- */
+//==================================================================================================
+// --- Setup ---
+//==================================================================================================
+
 void Injector::setup() {
     m_motorA->HlfbMode(MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM);
     m_motorA->HlfbCarrier(MotorDriver::HLFB_CARRIER_482_HZ);
@@ -79,134 +148,425 @@ void Injector::setup() {
 
     m_motorA->EnableRequest(true);
     m_motorB->EnableRequest(true);
+
+    setupHomeSensors();
+
+    // --- NVM Initialization (magic "FLH1" = 0x464C4831) ---
+    NvmManager &nvmMgr = NvmManager::Instance();
+    const int32_t NVM_MAGIC_NUMBER = 0x464C4831;
+    int32_t magicValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(7 * 4));
+
+    if (magicValue != NVM_MAGIC_NUMBER) {
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(3 * 4), 0);  // Polarity: normal
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4), 0);  // Force mode: motor_torque
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(5 * 4), (int32_t)(0.0335f * 100000.0f));
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(6 * 4), (int32_t)(1.04f * 10000.0f));
+
+        for (int i = 0; i < 5; ++i) {
+            int32_t coeffBits;
+            memcpy(&coeffBits, &m_machineStrainCoeffs[i], sizeof(float));
+            nvmMgr.Int32(static_cast<NvmManager::NvmLocations>((8 + i) * 4), coeffBits);
+        }
+
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(13 * 4), 1);  // Home on boot: true
+
+        float defaultRetract = 0.0f;
+        int32_t retractBitsInit;
+        memcpy(&retractBitsInit, &defaultRetract, sizeof(float));
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(14 * 4), retractBitsInit);
+
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(7 * 4), NVM_MAGIC_NUMBER);
+    }
+
+    // Load polarity
+    int32_t polarityValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(3 * 4));
+    bool isInverted = (polarityValue == 1);
+    strcpy(m_polarity, isInverted ? "inverted" : "normal");
+    m_motorA->PolarityInvertSDDirection(isInverted);
+    m_motorB->PolarityInvertSDDirection(isInverted);
+
+    // Load force mode (0 = motor_torque, 1 = load_cell)
+    int32_t forceModeValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4));
+    strcpy(m_force_mode, (forceModeValue == 0) ? "motor_torque" : "load_cell");
+
+    // Load motor torque calibration
+    int32_t scaleValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(5 * 4));
+    int32_t offsetValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(6 * 4));
+
+    if (scaleValue > 0 && scaleValue < 20000 && scaleValue != -1) {
+        m_motor_torque_scale = (float)scaleValue / 100000.0f;
+    } else {
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(5 * 4), (int32_t)(0.0335f * 100000.0f));
+    }
+
+    if (offsetValue > -100000 && offsetValue < 100000 && offsetValue != 0 && offsetValue != -1) {
+        m_motor_torque_offset = (float)offsetValue / 10000.0f;
+    } else {
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(6 * 4), (int32_t)(1.04f * 10000.0f));
+    }
+
+    // Load machine strain coefficients
+    for (int i = 0; i < 5; ++i) {
+        int32_t coeffBits = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>((8 + i) * 4));
+        if (coeffBits != 0 && coeffBits != -1) {
+            float tempCoeff;
+            memcpy(&tempCoeff, &coeffBits, sizeof(float));
+            if (tempCoeff > -5e9f && tempCoeff < 5e9f && std::fabs(tempCoeff) < 1e4f) {
+                m_machineStrainCoeffs[i] = tempCoeff;
+                continue;
+            }
+        }
+        float defaultCoeff;
+        switch (i) {
+            case 0: defaultCoeff = MACHINE_STRAIN_COEFF_X4; break;
+            case 1: defaultCoeff = MACHINE_STRAIN_COEFF_X3; break;
+            case 2: defaultCoeff = MACHINE_STRAIN_COEFF_X2; break;
+            case 3: defaultCoeff = MACHINE_STRAIN_COEFF_X1; break;
+            default: defaultCoeff = MACHINE_STRAIN_COEFF_C; break;
+        }
+        m_machineStrainCoeffs[i] = defaultCoeff;
+        int32_t defaultBits;
+        memcpy(&defaultBits, &defaultCoeff, sizeof(float));
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>((8 + i) * 4), defaultBits);
+    }
+
+    // Load home on boot
+    int32_t homeOnBootValue = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(13 * 4));
+    m_home_on_boot = (homeOnBootValue != 0);
+
+    // Load retract position (offset in mm from home)
+    int32_t retractBits = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(14 * 4));
+    if (retractBits != 0 && retractBits != -1) {
+        float tempRetract;
+        memcpy(&tempRetract, &retractBits, sizeof(float));
+        if (tempRetract >= -100.0f && tempRetract <= 100.0f) {
+            m_retract_position_mm = tempRetract;
+        }
+    }
+
+    // Load press threshold (default 2.0 kg)
+    m_press_threshold_kg = 2.0f;
+    int32_t thresholdBits = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(15 * 4));
+    if (thresholdBits != 0 && thresholdBits != -1) {
+        float tempThreshold;
+        memcpy(&tempThreshold, &thresholdBits, sizeof(float));
+        if (tempThreshold >= 0.1f && tempThreshold <= 50.0f) {
+            m_press_threshold_kg = tempThreshold;
+        }
+    }
 }
 
-/**
- * @brief The main update loop for the injector's state machines.
- */
+//==================================================================================================
+// --- Machine Strain Compensation ---
+//==================================================================================================
+
+float Injector::evaluateMachineStrainForceFromDeflection(float deflection_mm) const {
+    float x = deflection_mm;
+    if (x < 0.0f) x = 0.0f;
+
+    float force = (((m_machineStrainCoeffs[0] * x + m_machineStrainCoeffs[1]) * x
+                    + m_machineStrainCoeffs[2]) * x + m_machineStrainCoeffs[3]) * x
+                    + m_machineStrainCoeffs[4];
+    if (force < 0.0f) force = 0.0f;
+    return force;
+}
+
+float Injector::estimateMachineDeflectionFromForce(float force_kg) const {
+    if (force_kg <= 0.0f) return 0.0f;
+
+    float min_force = evaluateMachineStrainForceFromDeflection(0.0f);
+    if (force_kg <= min_force) return 0.0f;
+
+    float low = 0.0f;
+    float high = MACHINE_STRAIN_MAX_DEFLECTION_MM;
+
+    const float MAX_DEFLECTION = MACHINE_STRAIN_MAX_DEFLECTION_MM * 4.0f;
+    int expansion_iterations = 0;
+    while (evaluateMachineStrainForceFromDeflection(high) < force_kg
+           && high < MAX_DEFLECTION && expansion_iterations < 20) {
+        high *= 1.5f;
+        expansion_iterations++;
+        if (high > MAX_DEFLECTION) { high = MAX_DEFLECTION; break; }
+    }
+
+    for (int i = 0; i < 20; ++i) {
+        float mid = 0.5f * (low + high);
+        float f_mid = evaluateMachineStrainForceFromDeflection(mid);
+        if (f_mid < force_kg) low = mid;
+        else high = mid;
+    }
+    return high;
+}
+
+void Injector::setMachineStrainCoeffs(float x4, float x3, float x2, float x1, float c) {
+    m_machineStrainCoeffs[0] = x4;
+    m_machineStrainCoeffs[1] = x3;
+    m_machineStrainCoeffs[2] = x2;
+    m_machineStrainCoeffs[3] = x1;
+    m_machineStrainCoeffs[4] = c;
+    m_prevForceValid = false;
+    m_prevTotalDeflectionMm = 0.0;
+    m_prevMachineDeflectionMm = 0.0;
+    m_machineEnergyJ = 0.0;
+    m_machineStrainContactActive = false;
+
+    NvmManager &nvmMgr = NvmManager::Instance();
+    for (int i = 0; i < 5; ++i) {
+        int32_t bits;
+        memcpy(&bits, &m_machineStrainCoeffs[i], sizeof(float));
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>((8 + i) * 4), bits);
+    }
+}
+
+//==================================================================================================
+// --- Main State Machine ---
+//==================================================================================================
+
 void Injector::updateState() {
+    updateJoules();
+
     switch (m_state) {
         case STATE_STANDBY:
-        // Do nothing while in standby
-        break;
         case STATE_MOTOR_FAULT:
-        // Do nothing, wait for reset
-        break;
+            break;
 
+        // ==================================================================
+        // HOMING — Gantry-squaring with independent hall-effect sensors
+        // ==================================================================
         case STATE_HOMING: {
+            if (Milliseconds() - m_homingStartTime > MAX_HOMING_DURATION_MS) {
+                abortMove();
+                reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Timeout exceeded.");
+                m_state = STATE_STANDBY;
+                m_homingPhase = HOMING_PHASE_IDLE;
+                break;
+            }
+
             switch (m_homingPhase) {
-                case RAPID_SEARCH_START: {
-                    reportEvent(STATUS_PREFIX_INFO, "Homing: Starting rapid search.");
-                    m_torqueLimit = INJECTOR_HOMING_SEARCH_TORQUE_PERCENT;
+                // --- RAPID APPROACH ---
+                case RAPID_APPROACH_START: {
+                    reportEvent(STATUS_PREFIX_INFO, "Homing: Starting rapid approach (gantry squaring).");
+                    m_axisAStopped = false;
+                    m_axisBStopped = false;
+                    m_axisAHomeSensorTriggered = false;
+                    m_axisBHomeSensorTriggered = false;
+                    m_torqueLimit = INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT;
+
                     long rapid_search_steps = m_homingDistanceSteps;
-                    if (m_homingState == HOMING_MACHINE) {
+                    if (m_homingState == HOMING_MACHINE)
                         rapid_search_steps = -rapid_search_steps;
-                    }
+
                     startMove(rapid_search_steps, m_homingRapidSps, m_homingAccelSps2);
-                    m_homingStartTime = Milliseconds();
-                    m_homingPhase = RAPID_SEARCH_WAIT_TO_START;
+                    m_homingPhase = RAPID_APPROACH_WAIT_TO_START;
                     break;
                 }
-                case RAPID_SEARCH_WAIT_TO_START:
-                    if (isMoving()) {
-                        m_homingPhase = RAPID_SEARCH_MOVING;
-                    }
-                    else if (Milliseconds() - m_homingStartTime > 500) {
+
+                case RAPID_APPROACH_WAIT_TO_START: {
+                    bool m0_moving = m_motorA->StatusReg().bit.StepsActive;
+                    bool m1_moving = m_motorB->StatusReg().bit.StepsActive;
+                    if (m0_moving && m1_moving) {
+                        m_homingPhase = RAPID_APPROACH_MOVING;
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: Rapid approach moving, monitoring sensors.");
+                    } else if (Milliseconds() - m_homingStartTime > 500) {
                         abortMove();
                         char errorMsg[200];
-                        snprintf(errorMsg, sizeof(errorMsg), "Homing failed: Motor did not start moving. M0 Status=0x%04X, M1 Status=0x%04X",
-                                 (unsigned int)m_motorA->StatusReg().reg, (unsigned int)m_motorB->StatusReg().reg);
-                        reportEvent(STATUS_PREFIX_INFO, errorMsg);
-                        m_state = STATE_STANDBY;
-                        m_homingPhase = HOMING_PHASE_IDLE;
-                    }
-                break;
-                case RAPID_SEARCH_MOVING: {
-                    if (checkTorqueLimit()) {
-                        reportEvent(STATUS_PREFIX_INFO, "Homing: Rapid search torque limit hit.");
-                        m_homingPhase = BACKOFF_START;
-                        } else if (!isMoving()) {
-                        abortMove();
-                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Axis stopped before torque limit was reached.");
+                        snprintf(errorMsg, sizeof(errorMsg),
+                            "Homing failed: Not all motors started. M0=%d M1=%d M0_status=0x%04X M1_status=0x%04X",
+                            m0_moving ? 1 : 0, m1_moving ? 1 : 0,
+                            (unsigned int)m_motorA->StatusReg().reg,
+                            (unsigned int)m_motorB->StatusReg().reg);
+                        reportEvent(STATUS_PREFIX_ERROR, errorMsg);
                         m_state = STATE_STANDBY;
                         m_homingPhase = HOMING_PHASE_IDLE;
                     }
                     break;
                 }
+
+                case RAPID_APPROACH_MOVING: {
+                    if (!m_axisAStopped && isHomeSensorTriggered(0)) {
+                        stopAxis(0);
+                        m_axisAStopped = true;
+                        m_axisAHomeSensorTriggered = true;
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: M0 sensor triggered (rapid).");
+                    }
+                    if (!m_axisBStopped && isHomeSensorTriggered(1)) {
+                        stopAxis(1);
+                        m_axisBStopped = true;
+                        m_axisBHomeSensorTriggered = true;
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: M1 sensor triggered (rapid).");
+                    }
+                    if (checkTorqueLimit()) {
+                        abortMove();
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: Torque limit hit during rapid approach (backup safety).");
+                        m_axisAStopped = true;
+                        m_axisBStopped = true;
+                    }
+
+                    if (m_axisAStopped && m_axisBStopped) {
+                        if (m_axisAHomeSensorTriggered || m_axisBHomeSensorTriggered) {
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: Rapid approach complete, starting backoff.");
+                            m_homingPhase = BACKOFF_START;
+                        } else {
+                            reportEvent(STATUS_PREFIX_ERROR, "Homing failed: No sensors triggered during rapid approach.");
+                            m_state = STATE_STANDBY;
+                            m_homingPhase = HOMING_PHASE_IDLE;
+                        }
+                    } else if (!isMoving()) {
+                        abortMove();
+                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motion stopped before sensors triggered.");
+                        m_state = STATE_STANDBY;
+                        m_homingPhase = HOMING_PHASE_IDLE;
+                    }
+                    break;
+                }
+
+                // --- BACKOFF ---
                 case BACKOFF_START: {
                     reportEvent(STATUS_PREFIX_INFO, "Homing: Starting backoff.");
+                    m_axisAStopped = false;
+                    m_axisBStopped = false;
+                    m_axisAHomeSensorTriggered = false;
+                    m_axisBHomeSensorTriggered = false;
                     m_torqueLimit = INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT;
-                    long backoff_steps = (m_homingState == HOMING_MACHINE) ? m_homingBackoffSteps : -m_homingBackoffSteps;
+
+                    long backoff_steps = (m_homingState == HOMING_MACHINE)
+                                          ? m_homingBackoffSteps : -m_homingBackoffSteps;
                     startMove(backoff_steps, m_homingBackoffSps, m_homingAccelSps2);
                     m_homingPhase = BACKOFF_WAIT_TO_START;
                     break;
                 }
+
                 case BACKOFF_WAIT_TO_START:
-                if (isMoving()) {
-                    m_homingPhase = BACKOFF_MOVING;
-                }
-                break;
+                    if (isMoving()) m_homingPhase = BACKOFF_MOVING;
+                    break;
+
                 case BACKOFF_MOVING:
-                if (!isMoving()) {
-                    reportEvent(STATUS_PREFIX_INFO, "Homing: Backoff complete.");
-                    m_homingPhase = SLOW_SEARCH_START;
-                }
-                break;
-                case SLOW_SEARCH_START: {
-                    reportEvent(STATUS_PREFIX_INFO, "Homing: Starting slow search.");
-                    m_torqueLimit = INJECTOR_HOMING_SEARCH_TORQUE_PERCENT;
-                    long slow_search_steps = (m_homingState == HOMING_MACHINE) ? -m_homingBackoffSteps * 2 : m_homingBackoffSteps * 2;
-                    startMove(slow_search_steps, m_homingTouchSps, m_homingAccelSps2);
-                    m_homingPhase = SLOW_SEARCH_WAIT_TO_START;
+                    if (!isMoving()) {
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: Backoff complete, starting slow approach.");
+                        m_homingPhase = SLOW_APPROACH_START;
+                    }
+                    break;
+
+                // --- SLOW APPROACH ---
+                case SLOW_APPROACH_START: {
+                    reportEvent(STATUS_PREFIX_INFO, "Homing: Starting slow approach for precision.");
+                    m_axisAStopped = false;
+                    m_axisBStopped = false;
+                    m_axisAHomeSensorTriggered = false;
+                    m_axisBHomeSensorTriggered = false;
+                    m_torqueLimit = INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT;
+
+                    long slow_steps = (m_homingState == HOMING_MACHINE)
+                                       ? -m_homingBackoffSteps * 2 : m_homingBackoffSteps * 2;
+                    startMove(slow_steps, m_homingTouchSps, m_homingAccelSps2);
+                    m_homingPhase = SLOW_APPROACH_WAIT_TO_START;
                     break;
                 }
-                case SLOW_SEARCH_WAIT_TO_START:
-                if (isMoving()) {
-                    m_homingPhase = SLOW_SEARCH_MOVING;
-                }
-                break;
-                case SLOW_SEARCH_MOVING: {
+
+                case SLOW_APPROACH_WAIT_TO_START:
+                    if (isMoving()) {
+                        m_homingPhase = SLOW_APPROACH_MOVING;
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: Slow approach moving, monitoring sensors.");
+                    }
+                    break;
+
+                case SLOW_APPROACH_MOVING: {
+                    if (!m_axisAStopped && isHomeSensorTriggered(0)) {
+                        stopAxis(0);
+                        m_axisAStopped = true;
+                        m_axisAHomeSensorTriggered = true;
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: M0 sensor triggered (slow) - precise position found.");
+                    }
+                    if (!m_axisBStopped && isHomeSensorTriggered(1)) {
+                        stopAxis(1);
+                        m_axisBStopped = true;
+                        m_axisBHomeSensorTriggered = true;
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: M1 sensor triggered (slow) - precise position found.");
+                    }
                     if (checkTorqueLimit()) {
-                        reportEvent(STATUS_PREFIX_INFO, "Homing: Precise position found. Moving to offset.");
-                        m_homingPhase = SET_OFFSET_START;
-                        } else if (!isMoving()) {
                         abortMove();
-                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed during slow search.");
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: Torque limit hit during slow approach (backup safety).");
+                        m_axisAStopped = true;
+                        m_axisBStopped = true;
+                    }
+
+                    if (m_axisAStopped && m_axisBStopped) {
+                        if (m_axisAHomeSensorTriggered && m_axisBHomeSensorTriggered) {
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: Both sensors triggered, gantry squared. Moving to offset.");
+                            m_homingPhase = FINAL_BACKOFF_START;
+                        } else if (m_axisAHomeSensorTriggered || m_axisBHomeSensorTriggered) {
+                            char warnMsg[128];
+                            snprintf(warnMsg, sizeof(warnMsg),
+                                     "Homing: Warning - only %s sensor triggered during slow approach.",
+                                     m_axisAHomeSensorTriggered ? "M0" : "M1");
+                            reportEvent(STATUS_PREFIX_INFO, warnMsg);
+                            m_homingPhase = FINAL_BACKOFF_START;
+                        } else {
+                            reportEvent(STATUS_PREFIX_ERROR, "Homing failed: No sensors triggered during slow approach.");
+                            m_state = STATE_STANDBY;
+                            m_homingPhase = HOMING_PHASE_IDLE;
+                        }
+                    } else if (!isMoving()) {
+                        abortMove();
+                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motion stopped before sensors triggered (slow).");
                         m_state = STATE_STANDBY;
                         m_homingPhase = HOMING_PHASE_IDLE;
                     }
                     break;
                 }
-                case SET_OFFSET_START: {
+
+                // --- FINAL BACKOFF ---
+                case FINAL_BACKOFF_START: {
+                    reportEvent(STATUS_PREFIX_INFO, "Homing: Moving to final offset position.");
                     m_torqueLimit = INJECTOR_HOMING_BACKOFF_TORQUE_PERCENT;
-                    long offset_steps = (m_homingState == HOMING_MACHINE) ? m_homingBackoffSteps : -m_homingBackoffSteps;
+                    long offset_steps = (m_homingState == HOMING_MACHINE)
+                                         ? m_homingBackoffSteps : -m_homingBackoffSteps;
                     startMove(offset_steps, m_homingBackoffSps, m_homingAccelSps2);
-                    m_homingPhase = SET_OFFSET_WAIT_TO_START;
+                    m_homingPhase = FINAL_BACKOFF_WAIT_TO_START;
                     break;
                 }
-                case SET_OFFSET_WAIT_TO_START:
-                if (isMoving()) {
-                    m_homingPhase = SET_OFFSET_MOVING;
-                }
-                break;
-                case SET_OFFSET_MOVING:
-                if (!isMoving()) {
-                    reportEvent(STATUS_PREFIX_INFO, "Homing: Offset position reached.");
-                    m_homingPhase = SET_ZERO;
-                }
-                break;
+
+                case FINAL_BACKOFF_WAIT_TO_START:
+                    if (isMoving()) m_homingPhase = FINAL_BACKOFF_MOVING;
+                    break;
+
+                case FINAL_BACKOFF_MOVING:
+                    if (!isMoving()) {
+                        reportEvent(STATUS_PREFIX_INFO, "Homing: Final position reached.");
+                        m_homingPhase = SET_ZERO;
+                    }
+                    break;
+
+                // --- SET ZERO ---
                 case SET_ZERO: {
-                    char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
-                    const char* commandStr = (m_homingState == HOMING_MACHINE) ? CMD_STR_MACHINE_HOME_MOVE : CMD_STR_CARTRIDGE_HOME_MOVE;
-                    
+                    const char* commandStr = (m_homingState == HOMING_MACHINE)
+                                              ? CMD_STR_MACHINE_HOME_MOVE : CMD_STR_CARTRIDGE_HOME_MOVE;
+
                     if (m_homingState == HOMING_MACHINE) {
                         m_machineHomeReferenceSteps = m_motorA->PositionRefCommanded();
                         m_homingMachineDone = true;
-                        } else { // HOMING_CARTRIDGE
+
+                        if (m_retract_position_mm != 0.0f) {
+                            m_retractReferenceSteps = m_machineHomeReferenceSteps
+                                + static_cast<long>(m_retract_position_mm * STEPS_PER_MM_INJECTOR);
+                            char dbg[128];
+                            snprintf(dbg, sizeof(dbg),
+                                     "Retract position recalculated after homing: %.2f mm (steps=%ld, home=%ld)",
+                                     m_retract_position_mm, m_retractReferenceSteps, m_machineHomeReferenceSteps);
+                            reportEvent(STATUS_PREFIX_INFO, dbg);
+                        }
+
+                        char sensorMsg[128];
+                        snprintf(sensorMsg, sizeof(sensorMsg),
+                                 "Homing complete. Sensor states: M0=%d, M1=%d",
+                                 getHomeSensorState(0) ? 1 : 0, getHomeSensorState(1) ? 1 : 0);
+                        reportEvent(STATUS_PREFIX_INFO, sensorMsg);
+                    } else {
                         m_cartridgeHomeReferenceSteps = m_motorA->PositionRefCommanded();
                         m_homingCartridgeDone = true;
                     }
-                    
+
+                    char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
                     snprintf(doneMsg, sizeof(doneMsg), "%s complete.", commandStr);
                     reportEvent(STATUS_PREFIX_DONE, doneMsg);
 
@@ -214,24 +574,30 @@ void Injector::updateState() {
                     m_homingPhase = HOMING_PHASE_IDLE;
                     break;
                 }
+
                 case HOMING_PHASE_ERROR:
-                reportEvent(STATUS_PREFIX_ERROR, "Injector homing sequence ended with error.");
-                m_state = STATE_STANDBY;
-                m_homingPhase = HOMING_PHASE_IDLE;
-                break;
+                    reportEvent(STATUS_PREFIX_ERROR, "Injector homing sequence ended with error.");
+                    m_state = STATE_STANDBY;
+                    m_homingPhase = HOMING_PHASE_IDLE;
+                    break;
+
                 default:
-                abortMove();
-                reportEvent(STATUS_PREFIX_ERROR, "Unknown homing phase, aborting.");
-                m_state = STATE_STANDBY;
-                m_homingPhase = HOMING_PHASE_IDLE;
-                break;
+                    abortMove();
+                    reportEvent(STATUS_PREFIX_ERROR, "Unknown homing phase, aborting.");
+                    m_state = STATE_STANDBY;
+                    m_homingPhase = HOMING_PHASE_IDLE;
+                    break;
             }
             break;
         }
 
+        // ==================================================================
+        // FEEDING — Injection operations (preserved from original Fillhead)
+        // ==================================================================
         case STATE_FEEDING: {
             if (checkTorqueLimit()) {
-                reportEvent(STATUS_PREFIX_ERROR,"FEED_MODE: Torque limit! Operation stopped.");
+                abortMove();
+                reportEvent(STATUS_PREFIX_ERROR, "FEED_MODE: Torque limit! Operation stopped.");
                 finalizeAndResetActiveDispenseOperation(false);
                 m_state = STATE_STANDBY;
                 return;
@@ -240,7 +606,7 @@ void Injector::updateState() {
             if (!isMoving() && m_feedState != FEED_INJECT_PAUSED) {
                 bool isStarting = (m_feedState == FEED_INJECT_STARTING);
                 uint32_t elapsed = Milliseconds() - m_feedStartTime;
-                
+
                 if (!isStarting || (isStarting && elapsed > MOVE_START_TIMEOUT_MS)) {
                     if (m_activeFeedCommand) {
                         char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
@@ -267,7 +633,6 @@ void Injector::updateState() {
 
             if (m_feedState == FEED_INJECT_PAUSED && !isMoving()) {
                 if (m_active_op_steps_per_ml > 0.0001f) {
-                    // m_active_op_total_dispensed_ml is now updated continuously, so we only need to calculate remaining steps here.
                     long total_steps_dispensed = (long)(m_active_op_total_dispensed_ml * m_active_op_steps_per_ml);
                     m_active_op_remaining_steps = m_active_op_total_target_steps - total_steps_dispensed;
                     if (m_active_op_remaining_steps < 0) m_active_op_remaining_steps = 0;
@@ -277,13 +642,16 @@ void Injector::updateState() {
             break;
         }
 
+        // ==================================================================
+        // JOGGING — Manual jog moves (preserved from original Fillhead)
+        // ==================================================================
         case STATE_JOGGING: {
             if (checkTorqueLimit()) {
                 abortMove();
                 reportEvent(STATUS_PREFIX_INFO, "JOG: Torque limit. Move stopped.");
                 m_state = STATE_STANDBY;
                 if (m_activeJogCommand) m_activeJogCommand = nullptr;
-                } else if (!isMoving()) {
+            } else if (!isMoving()) {
                 if (m_activeJogCommand) {
                     char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
                     std::snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeJogCommand);
@@ -294,33 +662,152 @@ void Injector::updateState() {
             }
             break;
         }
+
+        // ==================================================================
+        // MOVING — General move_abs / move_inc (from Pressboi)
+        // ==================================================================
+        case STATE_MOVING: {
+            // Force / torque limit checking during active moves
+            if (m_moveState == MOVE_ACTIVE) {
+                if (strcmp(m_active_op_force_mode, "load_cell") == 0) {
+                    const char* errorMsg = nullptr;
+                    if (checkForceSensorStatus(&errorMsg)) {
+                        abortMove();
+                        char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+                        snprintf(fullMsg, sizeof(fullMsg), "Move stopped: %s", errorMsg);
+                        reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+                        m_moveState = MOVE_PAUSED;
+                        return;
+                    }
+                } else {
+                    if (checkTorqueLimit()) {
+                        char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
+                        snprintf(limit_desc, sizeof(limit_desc), "Torque limit (%.1f%%)", m_torqueLimit);
+                        handleLimitReached(limit_desc, m_torqueLimit);
+                        return;
+                    }
+                }
+            }
+
+            // Transition from STARTING/RESUMING to ACTIVE
+            if ((m_moveState == MOVE_STARTING || m_moveState == MOVE_RESUMING) && isMoving()) {
+                m_moveState = MOVE_ACTIVE;
+                m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
+            }
+
+            // Check for move completion
+            if (!isMoving() && m_moveState != MOVE_PAUSED) {
+                bool isStarting = (m_moveState == MOVE_STARTING || m_moveState == MOVE_RESUMING);
+                uint32_t elapsed = Milliseconds() - m_moveStartTime;
+
+                if (isStarting && elapsed > MOVE_START_TIMEOUT_MS) {
+                    if (m_activeMoveCommand) {
+                        reportEvent(STATUS_PREFIX_ERROR, "Move timeout: Motor failed to start");
+                    }
+                    finalizeAndResetActiveMove(false);
+                    m_state = STATE_STANDBY;
+                } else if (!isStarting) {
+                    // Record endpoint for press moves (not retracts)
+                    if (m_activeMoveCommand &&
+                        (strcmp(m_activeMoveCommand, "move_abs") == 0 ||
+                         strcmp(m_activeMoveCommand, "move_inc") == 0)) {
+                        long current_pos_steps = m_motorA->PositionRefCommanded();
+                        m_endpoint_mm = static_cast<float>(
+                            static_cast<double>(current_pos_steps - m_machineHomeReferenceSteps)
+                            / STEPS_PER_MM_INJECTOR);
+                    }
+
+                    // Auto-retract after move completion if configured
+                    if (strcmp(m_active_op_force_action, "retract") == 0) {
+                        reportEvent(STATUS_PREFIX_INFO, "Move complete, retracting...");
+                        m_originalMoveCommand = m_activeMoveCommand;
+                        long retract_target = (m_retractReferenceSteps == LONG_MIN)
+                            ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
+                        m_active_op_force_action[0] = '\0';
+                        m_moveState = MOVE_TO_HOME;
+                        m_activeMoveCommand = "retract";
+                        m_active_op_target_position_steps = retract_target;
+                        long current_pos = m_motorA->PositionRefCommanded();
+                        long steps_to_retract = retract_target - current_pos;
+                        m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+                        float speed_mms = (m_retractSpeedMms > 0.0f)
+                            ? m_retractSpeedMms : RETRACT_DEFAULT_SPEED_MMS;
+                        if (speed_mms > 100.0f) speed_mms = 100.0f;
+                        int velocity_sps = static_cast<int>(speed_mms * STEPS_PER_MM_INJECTOR);
+                        m_active_op_velocity_sps = velocity_sps;
+                        m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+                        startMove(steps_to_retract, velocity_sps, m_moveDefaultAccelSPS2);
+                        reportEvent(STATUS_PREFIX_START, "retract");
+                    } else {
+                        if (m_originalMoveCommand != nullptr) {
+                            reportEvent(STATUS_PREFIX_DONE, m_originalMoveCommand);
+                            m_originalMoveCommand = nullptr;
+                        } else if (m_activeMoveCommand) {
+                            reportEvent(STATUS_PREFIX_DONE, m_activeMoveCommand);
+                        }
+                        finalizeAndResetActiveMove(true);
+                        m_state = STATE_STANDBY;
+                    }
+                }
+            }
+
+            // Track distance during active moves
+            if (m_moveState == MOVE_ACTIVE) {
+                long current_pos = m_motorA->PositionRefCommanded();
+                long steps_moved = current_pos - m_active_op_initial_axis_steps;
+                m_active_op_total_distance_mm = (float)std::abs(steps_moved) / STEPS_PER_MM_INJECTOR;
+            }
+
+            // Handle paused state (calculate remaining, report once)
+            if (m_moveState == MOVE_PAUSED && !isMoving()) {
+                if (!m_pausedMessageSent) {
+                    long current_pos = m_motorA->PositionRefCommanded();
+                    long steps_moved_so_far = std::abs(current_pos - m_active_op_initial_axis_steps);
+                    m_active_op_remaining_steps = m_active_op_total_target_steps - steps_moved_so_far;
+                    if (m_active_op_remaining_steps < 0) m_active_op_remaining_steps = 0;
+                    reportEvent(STATUS_PREFIX_INFO, "Move: Operation Paused. Waiting for Resume/Cancel.");
+                    m_pausedMessageSent = true;
+                }
+            } else {
+                m_pausedMessageSent = false;
+            }
+            break;
+        }
     }
 }
 
-/**
- * @brief Handles a command specifically for the injector system.
- */
+//==================================================================================================
+// --- Command Dispatch ---
+//==================================================================================================
+
 void Injector::handleCommand(Command cmd, const char* args) {
     if (!m_isEnabled) {
         reportEvent(STATUS_PREFIX_ERROR, "Injector command ignored: Motors are disabled.");
         return;
     }
-	
-	if (m_motorA->StatusReg().bit.MotorInFault || m_motorB->StatusReg().bit.MotorInFault) {
+
+    if (m_motorA->StatusReg().bit.MotorInFault || m_motorB->StatusReg().bit.MotorInFault) {
         char errorMsg[200];
-        snprintf(errorMsg, sizeof(errorMsg), "Injector command ignored: Motor in fault. M0 Status=0x%04X, M1 Status=0x%04X",
-                 (unsigned int)m_motorA->StatusReg().reg, (unsigned int)m_motorB->StatusReg().reg);
+        snprintf(errorMsg, sizeof(errorMsg),
+                 "Injector command ignored: Motor in fault. M0 Status=0x%04X, M1 Status=0x%04X",
+                 (unsigned int)m_motorA->StatusReg().reg,
+                 (unsigned int)m_motorB->StatusReg().reg);
         reportEvent(STATUS_PREFIX_ERROR, errorMsg);
         return;
     }
-	
+
+    // Block new motion commands while busy
     if (m_state != STATE_STANDBY &&
-    (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE || cmd == CMD_INJECT_STATOR || cmd == CMD_INJECT_ROTOR)) {
+        (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE ||
+         cmd == CMD_INJECT_STATOR || cmd == CMD_INJECT_ROTOR ||
+         cmd == CMD_HOME || cmd == CMD_MOVE_ABS || cmd == CMD_MOVE_INC || cmd == CMD_RETRACT ||
+         cmd == CMD_MOVE_TO_CARTRIDGE_HOME || cmd == CMD_MOVE_TO_CARTRIDGE_RETRACT)) {
         reportEvent(STATUS_PREFIX_ERROR, "Injector command ignored: Another operation is in progress.");
         return;
     }
 
-    switch(cmd) {
+    switch (cmd) {
+        // --- Existing Fillhead Injection Commands ---
         case CMD_JOG_MOVE:                  jogMove(args); break;
         case CMD_MACHINE_HOME_MOVE:         machineHome(); break;
         case CMD_CARTRIDGE_HOME_MOVE:       cartridgeHome(); break;
@@ -335,103 +822,147 @@ void Injector::handleCommand(Command cmd, const char* args) {
         case CMD_PAUSE_INJECTION:           pauseOperation(); break;
         case CMD_RESUME_INJECTION:          resumeOperation(); break;
         case CMD_CANCEL_INJECTION:          cancelOperation(); break;
-        default:
-        break;
+
+        // --- Pressboi General Motion Commands ---
+        case CMD_HOME:                      home(); break;
+        case CMD_MOVE_ABS:                  moveAbsolute(args); break;
+        case CMD_MOVE_INC:                  moveIncremental(args); break;
+        case CMD_SET_RETRACT:               setRetract(args); break;
+        case CMD_RETRACT:                   retract(args); break;
+        case CMD_PAUSE:                     pauseGeneralMove(); break;
+        case CMD_RESUME:                    resumeGeneralMove(); break;
+        case CMD_CANCEL:                    cancelGeneralMove(); break;
+
+        default: break;
     }
 }
 
-/**
- * @brief Enables both injector motors.
- */
+//==================================================================================================
+// --- Enable / Disable ---
+//==================================================================================================
+
 void Injector::enable() {
+    m_motorA->ClearAlerts();
+    m_motorB->ClearAlerts();
+
     m_motorA->EnableRequest(true);
     m_motorB->EnableRequest(true);
 
-    // Always set motor parameters on enable to ensure a known good state after a fault,
-    // as the ClearCore driver may reset them to zero.
     m_motorA->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
     m_motorA->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
     m_motorB->VelMax(MOTOR_DEFAULT_VEL_MAX_SPS);
     m_motorB->AccelMax(MOTOR_DEFAULT_ACCEL_MAX_SPS2);
-    
+
+    m_enableState = ENABLE_WAITING;
+    m_enableStartTime = Milliseconds();
     m_isEnabled = true;
-    reportEvent(STATUS_PREFIX_INFO, "Injector motors enabled.");
+
+    reportEvent(STATUS_PREFIX_INFO, "Injector motors enabling...");
 }
 
-/**
- * @brief Disables both injector motors.
- */
+EnableState Injector::updateEnableState() {
+    if (m_enableState == ENABLE_WAITING) {
+        if (m_motorA->StatusReg().bit.Enabled && m_motorB->StatusReg().bit.Enabled) {
+            m_enableState = ENABLE_COMPLETE;
+            reportEvent(STATUS_PREFIX_INFO, "Injector motors enabled.");
+        } else if (Milliseconds() - m_enableStartTime > 2000) {
+            m_enableState = ENABLE_TIMEOUT;
+            char warnMsg[128];
+            snprintf(warnMsg, sizeof(warnMsg), "Motor enable timeout. M0=%d, M1=%d",
+                     m_motorA->StatusReg().bit.Enabled ? 1 : 0,
+                     m_motorB->StatusReg().bit.Enabled ? 1 : 0);
+            reportEvent(STATUS_PREFIX_INFO, warnMsg);
+        }
+    }
+    return m_enableState;
+}
+
+bool Injector::isEnableComplete() const {
+    return m_enableState == ENABLE_COMPLETE || m_enableState == ENABLE_TIMEOUT;
+}
+
 void Injector::disable() {
     m_motorA->EnableRequest(false);
     m_motorB->EnableRequest(false);
     m_isEnabled = false;
+    m_enableState = ENABLE_IDLE;
     reportEvent(STATUS_PREFIX_INFO, "Injector motors disabled.");
 }
 
-/**
- * @brief Decelerates any ongoing motion to a stop and resets the state machines.
- */
+//==================================================================================================
+// --- Abort / Reset ---
+//==================================================================================================
+
 void Injector::abortMove() {
     m_motorA->MoveStopDecel();
     m_motorB->MoveStopDecel();
-    Delay_ms(POST_ABORT_DELAY_MS);
 }
 
-/**
- * @brief Resets all state machines to their idle state.
- */
 void Injector::reset() {
     m_state = STATE_STANDBY;
     m_homingState = HOMING_NONE;
     m_homingPhase = HOMING_PHASE_IDLE;
     m_feedState = FEED_STANDBY;
+    m_moveState = MOVE_STANDBY;
+    m_enableState = ENABLE_IDLE;
     fullyResetActiveDispenseOperation();
+    fullyResetActiveMove();
 }
 
-/**
- * @brief Handles the JOG_MOVE command.
- */
-void Injector::jogMove(const char* args) {
-    float dist_mm1 = 0, dist_mm2 = 0, vel_mms = 0, accel_mms2 = 0;
-    int torque_percent = 0;
+//==================================================================================================
+// --- Homing Commands ---
+//==================================================================================================
 
-    int parsed_count = std::sscanf(args, "%f %f %f %f %d", &dist_mm1, &dist_mm2, &vel_mms, &accel_mms2, &torque_percent);
-
-    if (parsed_count == 5) {
-        if (torque_percent <= 0 || torque_percent > 100) torque_percent = JOG_DEFAULT_TORQUE_PERCENT;
-        if (vel_mms <= 0) vel_mms = JOG_DEFAULT_VEL_MMS;
-        if (accel_mms2 <= 0) accel_mms2 = JOG_DEFAULT_ACCEL_MMSS;
-
-        long steps1 = (long)(dist_mm1 * STEPS_PER_MM_INJECTOR);
-        int velocity_sps = (int)(vel_mms * STEPS_PER_MM_INJECTOR);
-        int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_INJECTOR);
-        
-        m_activeJogCommand = CMD_STR_JOG_MOVE;
-        m_state = STATE_JOGGING;
-        m_torqueLimit = (float)torque_percent;
-        startMove(steps1, velocity_sps, accel_sps2_val);
-        } else {
-        char errorMsg[STATUS_MESSAGE_BUFFER_SIZE];
-        std::snprintf(errorMsg, sizeof(errorMsg), "Invalid JOG_MOVE format. Expected 5 params, got %d.", parsed_count);
-        reportEvent(STATUS_PREFIX_ERROR, errorMsg);
-    }
+void Injector::home() {
+    machineHome();
 }
 
-/**
- * @brief Handles the MACHINE_HOME_MOVE command.
- */
 void Injector::machineHome() {
+    if (!m_homeSensorsInitialized) {
+        setupHomeSensors();
+    }
+
+    char statusMsg[200];
+    snprintf(statusMsg, sizeof(statusMsg),
+        "Home: Motor status: M0(en=%d,fault=%d,status=0x%04X) M1(en=%d,fault=%d,status=0x%04X)",
+        m_motorA->StatusReg().bit.Enabled ? 1 : 0,
+        m_motorA->StatusReg().bit.MotorInFault ? 1 : 0,
+        (unsigned int)m_motorA->StatusReg().reg,
+        m_motorB->StatusReg().bit.Enabled ? 1 : 0,
+        m_motorB->StatusReg().bit.MotorInFault ? 1 : 0,
+        (unsigned int)m_motorB->StatusReg().reg);
+    reportEvent(STATUS_PREFIX_INFO, statusMsg);
+
+    if (!m_motorA->StatusReg().bit.Enabled || !m_motorB->StatusReg().bit.Enabled) {
+        char errorMsg[128];
+        snprintf(errorMsg, sizeof(errorMsg),
+            "Homing failed: Motors not enabled. M0=%d, M1=%d",
+            m_motorA->StatusReg().bit.Enabled ? 1 : 0,
+            m_motorB->StatusReg().bit.Enabled ? 1 : 0);
+        reportEvent(STATUS_PREFIX_ERROR, errorMsg);
+        return;
+    }
+
     m_homingDistanceSteps = (long)(fabs(INJECTOR_HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
     m_homingBackoffSteps = (long)(INJECTOR_HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
     m_homingRapidSps = (int)fabs(INJECTOR_HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingBackoffSps = (int)fabs(INJECTOR_HOMING_BACKOFF_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingTouchSps = (int)fabs(INJECTOR_HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingAccelSps2 = (int)fabs(INJECTOR_HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
-    
+
+    m_active_op_target_position_steps = 0;
+
     char logMsg[200];
     snprintf(logMsg, sizeof(logMsg), "Homing params: dist_steps=%ld, rapid_sps=%d, touch_sps=%d, accel_sps2=%d",
              m_homingDistanceSteps, m_homingRapidSps, m_homingTouchSps, m_homingAccelSps2);
     reportEvent(STATUS_PREFIX_INFO, logMsg);
+
+    char sensorMsg[128];
+    snprintf(sensorMsg, sizeof(sensorMsg), "Home sensors before homing: M0(DI7)=%d, M1(DI6)=%d (active=%s)",
+             getHomeSensorState(0) ? 1 : 0,
+             getHomeSensorState(1) ? 1 : 0,
+             HOME_SENSOR_ACTIVE_STATE ? "HIGH" : "LOW");
+    reportEvent(STATUS_PREFIX_INFO, sensorMsg);
 
     if (m_homingDistanceSteps == 0) {
         reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Calculated distance is zero. Check config.");
@@ -440,70 +971,90 @@ void Injector::machineHome() {
 
     m_state = STATE_HOMING;
     m_homingState = HOMING_MACHINE;
-    m_homingPhase = RAPID_SEARCH_START;
+    m_homingPhase = RAPID_APPROACH_START;
     m_homingStartTime = Milliseconds();
     m_homingMachineDone = false;
 
-    reportEvent(STATUS_PREFIX_START, "MACHINE_HOME_MOVE initiated.");
+    m_axisAHomeSensorTriggered = false;
+    m_axisBHomeSensorTriggered = false;
+    m_axisAStopped = false;
+    m_axisBStopped = false;
+
+    m_joules = 0.0;
+    m_press_startpoint_mm = 0.0f;
+    long current_pos_steps = m_motorA->PositionRefCommanded();
+    m_prev_position_mm = static_cast<double>(current_pos_steps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+    m_prevForceValid = false;
+    m_forceLimitTriggered = false;
+    m_jouleIntegrationActive = false;
+
+    reportEvent(STATUS_PREFIX_START, "MACHINE_HOME_MOVE initiated (gantry squaring mode).");
 }
 
-/**
- * @brief Handles the CARTRIDGE_HOME_MOVE command.
- */
 void Injector::cartridgeHome() {
-    m_cumulative_dispensed_ml = 0.0f; // Reset cumulative dispensed volume on cartridge home
+    if (!m_homeSensorsInitialized) {
+        setupHomeSensors();
+    }
+
+    m_cumulative_dispensed_ml = 0.0f;
+
     m_homingDistanceSteps = (long)(fabs(INJECTOR_HOMING_STROKE_MM) * STEPS_PER_MM_INJECTOR);
     m_homingBackoffSteps = (long)(INJECTOR_HOMING_BACKOFF_MM * STEPS_PER_MM_INJECTOR);
     m_homingRapidSps = (int)fabs(INJECTOR_HOMING_RAPID_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingBackoffSps = (int)fabs(INJECTOR_HOMING_BACKOFF_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingTouchSps = (int)fabs(INJECTOR_HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingAccelSps2 = (int)fabs(INJECTOR_HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
-    
+
     m_state = STATE_HOMING;
     m_homingState = HOMING_CARTRIDGE;
-    m_homingPhase = RAPID_SEARCH_START;
+    m_homingPhase = RAPID_APPROACH_START;
     m_homingStartTime = Milliseconds();
     m_homingCartridgeDone = false;
+
+    m_axisAHomeSensorTriggered = false;
+    m_axisBHomeSensorTriggered = false;
+    m_axisAStopped = false;
+    m_axisBStopped = false;
+
+    m_jouleIntegrationActive = false;
 
     reportEvent(STATUS_PREFIX_START, "CARTRIDGE_HOME_MOVE initiated.");
 }
 
-/**
- * @brief Handles the MOVE_TO_CARTRIDGE_HOME command.
- */
+//==================================================================================================
+// --- Injection Commands (Preserved from Fillhead) ---
+//==================================================================================================
+
 void Injector::moveToCartridgeHome() {
     if (!m_homingCartridgeDone) {
         reportEvent(STATUS_PREFIX_ERROR, "Error: Cartridge not homed.");
         return;
     }
-    
+
     fullyResetActiveDispenseOperation();
     m_state = STATE_FEEDING;
     m_feedState = FEED_MOVING_TO_HOME;
     m_activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_HOME;
-    
+
     long current_pos = m_motorA->PositionRefCommanded();
     long steps_to_move = m_cartridgeHomeReferenceSteps - current_pos;
-    
+
     m_torqueLimit = (float)m_feedDefaultTorquePercent;
     startMove(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
 }
 
-/**
- * @brief Handles the MOVE_TO_CARTRIDGE_RETRACT command.
- */
 void Injector::moveToCartridgeRetract(const char* args) {
     if (!m_homingCartridgeDone) {
         reportEvent(STATUS_PREFIX_ERROR, "Error: Cartridge not homed.");
         return;
     }
-    
+
     float offset_mm = 0.0f;
     if (std::sscanf(args, "%f", &offset_mm) != 1 || offset_mm < 0) {
         reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid offset for MOVE_TO_CARTRIDGE_RETRACT.");
         return;
     }
-    
+
     fullyResetActiveDispenseOperation();
     m_state = STATE_FEEDING;
     m_feedState = FEED_MOVING_TO_RETRACT;
@@ -518,42 +1069,27 @@ void Injector::moveToCartridgeRetract(const char* args) {
     startMove(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
 }
 
-/**
- * @brief Initiates an injection move with dynamically calculated parameters.
- * @param args The command arguments, containing volume and optional overrides.
- * @param piston_a_diam The diameter of the 'A' side piston in mm.
- * @param piston_b_diam The diameter of the 'B' side piston in mm.
- * @param command_str The string name of the command being executed, for logging.
- */
 void Injector::initiateInjectMove(const char* args, float piston_a_diam, float piston_b_diam, const char* command_str) {
     float volume_ml = 0.0f;
-    // Optional speed parameter, with firmware-defined default
     float speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
-
-    // We no longer need accel and torque as optional params from the GUI,
-    // as they are not exposed in the simplified command.
     float accel_sps2 = (float)m_feedDefaultAccelSPS2;
     int torque_percent = m_feedDefaultTorquePercent;
 
     int parsed_count = std::sscanf(args, "%f %f", &volume_ml, &speed_ml_s);
 
-    if (parsed_count >= 1) { // Only volume is required
-        // --- Calculate steps/ml based on piston geometry ---
+    if (parsed_count >= 1) {
         float radius_a = piston_a_diam / 2.0f;
         float radius_b = piston_b_diam / 2.0f;
         float area_a = M_PI * radius_a * radius_a;
         float area_b = M_PI * radius_b * radius_b;
         float total_area_mm2 = area_a + area_b;
-        float ml_per_mm = total_area_mm2 / 1000.0f; // 1ml = 1000mm^3
+        float ml_per_mm = total_area_mm2 / 1000.0f;
         float steps_per_ml = STEPS_PER_MM_INJECTOR / ml_per_mm;
 
-        // Basic validation
         if (torque_percent <= 0 || torque_percent > 100) torque_percent = m_feedDefaultTorquePercent;
         if (volume_ml <= 0) { reportEvent(STATUS_PREFIX_ERROR, "Error: Inject volume must be positive."); return; }
-        // If speed is not provided or invalid, use the default.
-        if (speed_ml_s <= 0) speed_ml_s = INJECT_DEFAULT_SPEED_MLS; 
-        
-        // Setup and execute the move
+        if (speed_ml_s <= 0) speed_ml_s = INJECT_DEFAULT_SPEED_MLS;
+
         fullyResetActiveDispenseOperation();
         m_state = STATE_FEEDING;
         m_feedState = FEED_INJECT_STARTING;
@@ -581,10 +1117,8 @@ void Injector::initiateInjectMove(const char* args, float piston_a_diam, float p
     }
 }
 
+// --- Injection Pause / Resume / Cancel ---
 
-/**
- * @brief Handles the PAUSE_INJECTION command.
- */
 void Injector::pauseOperation() {
     if (m_state != STATE_FEEDING || m_feedState != FEED_INJECT_ACTIVE) {
         reportEvent(STATUS_PREFIX_INFO, "PAUSE ignored: No active injection to pause.");
@@ -595,9 +1129,6 @@ void Injector::pauseOperation() {
     reportEvent(STATUS_PREFIX_DONE, "PAUSE_INJECTION complete.");
 }
 
-/**
- * @brief Handles the RESUME_INJECTION command.
- */
 void Injector::resumeOperation() {
     if (m_state != STATE_FEEDING || m_feedState != FEED_INJECT_PAUSED) {
         reportEvent(STATUS_PREFIX_INFO, "RESUME ignored: No operation was paused.");
@@ -616,9 +1147,6 @@ void Injector::resumeOperation() {
     reportEvent(STATUS_PREFIX_DONE, "RESUME_INJECTION complete.");
 }
 
-/**
- * @brief Handles the CANCEL_INJECTION command.
- */
 void Injector::cancelOperation() {
     if (m_state != STATE_FEEDING) {
         reportEvent(STATUS_PREFIX_INFO, "CANCEL ignored: No active operation to cancel.");
@@ -630,15 +1158,572 @@ void Injector::cancelOperation() {
     reportEvent(STATUS_PREFIX_DONE, "CANCEL_INJECTION complete.");
 }
 
-/**
- * @brief Commands a synchronized move on both injector motors.
- */
+//==================================================================================================
+// --- General Move Commands (from Pressboi) ---
+//==================================================================================================
+
+void Injector::moveAbsolute(const char* args) {
+    if (!m_homingMachineDone) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before absolute moves.");
+        return;
+    }
+
+    float position_mm = 0.0f;
+    float speed_mms = MOVE_DEFAULT_VELOCITY_MMS;
+    float force_kg = 0.0f;
+    char force_action[32] = "hold";
+
+    int parsed = std::sscanf(args, "%f %f %f %31s", &position_mm, &speed_mms, &force_kg, force_action);
+    if (parsed < 1) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid parameters for MOVE_ABS. Need at least position.");
+        return;
+    }
+
+    if (speed_mms > 100.0f) {
+        speed_mms = 100.0f;
+        reportEvent(STATUS_PREFIX_INFO, "Speed limited to 100 mm/s for safety.");
+    }
+
+    // Validate force sensor in load_cell mode
+    if (strcmp(m_force_mode, "load_cell") == 0) {
+        const char* errorMsg = nullptr;
+        if (checkForceSensorStatus(&errorMsg)) {
+            char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+            snprintf(fullMsg, sizeof(fullMsg), "Move aborted: %s", errorMsg);
+            reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+            return;
+        }
+    }
+
+    long target_steps = m_machineHomeReferenceSteps + (long)(position_mm * STEPS_PER_MM_INJECTOR);
+    long current_pos = m_motorA->PositionRefCommanded();
+    long steps_to_move = target_steps - current_pos;
+
+    if (steps_to_move == 0) {
+        reportEvent(STATUS_PREFIX_INFO, "Already at target position. Move complete.");
+        reportEvent(STATUS_PREFIX_DONE, "move_abs");
+        return;
+    }
+
+    int velocity_sps = (int)(speed_mms * STEPS_PER_MM_INJECTOR);
+
+    // Set torque limit based on force mode and requested force
+    if (force_kg > 0.0f) {
+        if (strcmp(m_force_mode, "motor_torque") == 0) {
+            if (force_kg < 50.0f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 50 kg in motor_torque mode.");
+                return;
+            }
+            if (force_kg > 2000.0f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 2000 kg in motor_torque mode.");
+                return;
+            }
+            m_torqueLimit = m_motor_torque_scale * force_kg + m_motor_torque_offset;
+            char torque_msg[128];
+            snprintf(torque_msg, sizeof(torque_msg), "Torque limit set: %.1f%% (from %.0f kg) in %s mode",
+                     m_torqueLimit, force_kg, m_force_mode);
+            reportEvent(STATUS_PREFIX_INFO, torque_msg);
+        } else {
+            if (force_kg < 0.2f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 0.2 kg in load_cell mode.");
+                return;
+            }
+            if (force_kg > 1000.0f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 1000 kg in load_cell mode.");
+                return;
+            }
+            m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+        }
+    } else {
+        m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+    }
+
+    fullyResetActiveMove();
+    m_state = STATE_MOVING;
+    m_moveState = MOVE_STARTING;
+    m_activeMoveCommand = "move_abs";
+    m_active_op_target_position_steps = target_steps;
+    m_active_op_initial_axis_steps = current_pos;
+    m_active_op_total_target_steps = std::abs(steps_to_move);
+    m_active_op_velocity_sps = velocity_sps;
+    m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+    m_active_op_torque_percent = (int)m_torqueLimit;
+    m_moveStartTime = Milliseconds();
+
+    m_active_op_force_limit_kg = force_kg;
+    strncpy(m_active_op_force_action, force_action, sizeof(m_active_op_force_action) - 1);
+    m_active_op_force_action[sizeof(m_active_op_force_action) - 1] = '\0';
+    strncpy(m_active_op_force_mode, m_force_mode, sizeof(m_active_op_force_mode) - 1);
+    m_active_op_force_mode[sizeof(m_active_op_force_mode) - 1] = '\0';
+
+    m_joules = 0.0;
+    m_press_startpoint_mm = 0.0f;
+    long cur_steps = m_motorA->PositionRefCommanded();
+    m_prev_position_mm = static_cast<double>(cur_steps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+    m_machineStrainBaselinePosMm = m_prev_position_mm;
+    m_prevMachineDeflectionMm = 0.0;
+    m_prevTotalDeflectionMm = 0.0;
+    m_machineEnergyJ = 0.0;
+    m_machineStrainContactActive = false;
+    m_forceLimitTriggered = false;
+    m_jouleIntegrationActive = (strcmp(m_active_op_force_mode, "motor_torque") != 0);
+
+    startMove(steps_to_move, velocity_sps, m_moveDefaultAccelSPS2);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "move_abs to %.2f mm initiated (mode: %s)", position_mm, m_force_mode);
+    reportEvent(STATUS_PREFIX_START, msg);
+}
+
+void Injector::moveIncremental(const char* args) {
+    if (!m_homingMachineDone) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before incremental moves.");
+        return;
+    }
+
+    float distance_mm = 0.0f;
+    float speed_mms = MOVE_DEFAULT_VELOCITY_MMS;
+    float force_kg = 0.0f;
+    char force_action[32] = "hold";
+
+    int parsed = std::sscanf(args, "%f %f %f %31s", &distance_mm, &speed_mms, &force_kg, force_action);
+    if (parsed < 1) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid parameters for MOVE_INC. Need at least distance.");
+        return;
+    }
+
+    if (speed_mms > 100.0f) {
+        speed_mms = 100.0f;
+        reportEvent(STATUS_PREFIX_INFO, "Speed limited to 100 mm/s for safety.");
+    }
+
+    if (strcmp(m_force_mode, "load_cell") == 0) {
+        const char* errorMsg = nullptr;
+        if (checkForceSensorStatus(&errorMsg)) {
+            char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+            snprintf(fullMsg, sizeof(fullMsg), "Move aborted: %s", errorMsg);
+            reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+            return;
+        }
+    }
+
+    long steps_to_move = (long)(distance_mm * STEPS_PER_MM_INJECTOR);
+    if (steps_to_move == 0) {
+        reportEvent(STATUS_PREFIX_INFO, "Move distance is zero. Move complete.");
+        reportEvent(STATUS_PREFIX_DONE, "move_inc");
+        return;
+    }
+
+    long current_pos = m_motorA->PositionRefCommanded();
+    int velocity_sps = (int)(speed_mms * STEPS_PER_MM_INJECTOR);
+
+    if (force_kg > 0.0f) {
+        if (strcmp(m_force_mode, "motor_torque") == 0) {
+            if (force_kg < 50.0f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 50 kg in motor_torque mode.");
+                return;
+            }
+            if (force_kg > 2000.0f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 2000 kg in motor_torque mode.");
+                return;
+            }
+            m_torqueLimit = m_motor_torque_scale * force_kg + m_motor_torque_offset;
+            char torque_msg[128];
+            snprintf(torque_msg, sizeof(torque_msg), "Torque limit set: %.1f%% (from %.0f kg) in %s mode",
+                     m_torqueLimit, force_kg, m_force_mode);
+            reportEvent(STATUS_PREFIX_INFO, torque_msg);
+        } else {
+            if (force_kg < 0.2f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be >= 0.2 kg in load_cell mode.");
+                return;
+            }
+            if (force_kg > 1000.0f) {
+                reportEvent(STATUS_PREFIX_ERROR, "Error: Force must be <= 1000 kg in load_cell mode.");
+                return;
+            }
+            m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+        }
+    } else {
+        m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+    }
+
+    fullyResetActiveMove();
+    m_state = STATE_MOVING;
+    m_moveState = MOVE_STARTING;
+    m_activeMoveCommand = "move_inc";
+    m_active_op_target_position_steps = current_pos + steps_to_move;
+    m_active_op_initial_axis_steps = current_pos;
+    m_active_op_total_target_steps = std::abs(steps_to_move);
+    m_active_op_velocity_sps = velocity_sps;
+    m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+    m_active_op_torque_percent = (int)m_torqueLimit;
+    m_moveStartTime = Milliseconds();
+
+    m_active_op_force_limit_kg = force_kg;
+    strncpy(m_active_op_force_action, force_action, sizeof(m_active_op_force_action) - 1);
+    m_active_op_force_action[sizeof(m_active_op_force_action) - 1] = '\0';
+    strncpy(m_active_op_force_mode, m_force_mode, sizeof(m_active_op_force_mode) - 1);
+    m_active_op_force_mode[sizeof(m_active_op_force_mode) - 1] = '\0';
+
+    m_joules = 0.0;
+    m_press_startpoint_mm = 0.0f;
+    long cur_steps = m_motorA->PositionRefCommanded();
+    m_prev_position_mm = static_cast<double>(cur_steps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+    m_machineStrainBaselinePosMm = m_prev_position_mm;
+    m_prevMachineDeflectionMm = 0.0;
+    m_prevTotalDeflectionMm = 0.0;
+    m_machineEnergyJ = 0.0;
+    m_machineStrainContactActive = false;
+    m_forceLimitTriggered = false;
+    m_jouleIntegrationActive = (strcmp(m_active_op_force_mode, "motor_torque") != 0);
+
+    startMove(steps_to_move, velocity_sps, m_moveDefaultAccelSPS2);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "move_inc by %.2f mm initiated (mode: %s)", distance_mm, m_force_mode);
+    reportEvent(STATUS_PREFIX_START, msg);
+}
+
+void Injector::setRetract(const char* args) {
+    if (!m_homingMachineDone) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before setting retract position.");
+        return;
+    }
+
+    float position_mm = 0.0f;
+    float speed_mms = m_retractSpeedMms;
+    int parsed = std::sscanf(args, "%f %f", &position_mm, &speed_mms);
+    if (parsed < 1) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid position for SET_RETRACT.");
+        return;
+    }
+
+    if (parsed >= 2) {
+        if (speed_mms <= 0.0f) {
+            reportEvent(STATUS_PREFIX_ERROR, "Error: Retract speed must be > 0.");
+            return;
+        }
+        if (speed_mms > 100.0f) {
+            speed_mms = 100.0f;
+            reportEvent(STATUS_PREFIX_INFO, "Retract speed limited to 100 mm/s for safety.");
+        }
+        m_retractSpeedMms = speed_mms;
+    } else if (m_retractSpeedMms <= 0.0f) {
+        m_retractSpeedMms = RETRACT_DEFAULT_SPEED_MMS;
+    }
+    if (m_retractSpeedMms > 100.0f) m_retractSpeedMms = 100.0f;
+
+    long position_steps = (long)(position_mm * STEPS_PER_MM_INJECTOR);
+    m_retractReferenceSteps = m_machineHomeReferenceSteps + position_steps;
+    m_retract_position_mm = position_mm;
+
+    NvmManager &nvmMgr = NvmManager::Instance();
+    int32_t retractBits;
+    memcpy(&retractBits, &m_retract_position_mm, sizeof(float));
+    nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(14 * 4), retractBits);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Retract position set to %.2f mm (%ld steps from home) at %.2f mm/s",
+             position_mm, position_steps, m_retractSpeedMms);
+    reportEvent(STATUS_PREFIX_INFO, msg);
+    reportEvent(STATUS_PREFIX_DONE, "set_retract");
+}
+
+void Injector::retract(const char* args) {
+    if (!m_homingMachineDone) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Must home before moving to retract position.");
+        return;
+    }
+    if (m_retractReferenceSteps == LONG_MIN) {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Retract position not set. Use SET_RETRACT first.");
+        return;
+    }
+
+    float speed_mms = (m_retractSpeedMms > 0.0f) ? m_retractSpeedMms : RETRACT_DEFAULT_SPEED_MMS;
+    if (args && args[0] != '\0') {
+        int parsed = std::sscanf(args, "%f", &speed_mms);
+        if (parsed < 1) {
+            reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid speed for RETRACT.");
+            return;
+        }
+    }
+    if (speed_mms > 100.0f) {
+        speed_mms = 100.0f;
+        reportEvent(STATUS_PREFIX_INFO, "Speed limited to 100 mm/s for safety.");
+    }
+
+    fullyResetActiveMove();
+    m_state = STATE_MOVING;
+    m_moveState = MOVE_TO_HOME;
+    m_activeMoveCommand = "retract";
+
+    m_active_op_target_position_steps = m_retractReferenceSteps;
+    long current_pos = m_motorA->PositionRefCommanded();
+    long steps_to_retract = m_retractReferenceSteps - current_pos;
+
+    int velocity_sps = (int)(speed_mms * STEPS_PER_MM_INJECTOR);
+    m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+
+    m_active_op_initial_axis_steps = current_pos;
+    m_active_op_total_target_steps = std::abs(steps_to_retract);
+    m_active_op_velocity_sps = velocity_sps;
+    m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+    m_active_op_torque_percent = (int)m_torqueLimit;
+    m_moveStartTime = Milliseconds();
+
+    startMove(steps_to_retract, velocity_sps, m_moveDefaultAccelSPS2);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "retract to %.3f mm at %.2f mm/s initiated",
+             (float)(m_retractReferenceSteps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR, speed_mms);
+    reportEvent(STATUS_PREFIX_START, msg);
+}
+
+//==================================================================================================
+// --- General Move Pause / Resume / Cancel ---
+//==================================================================================================
+
+void Injector::pauseGeneralMove() {
+    if (m_state == STATE_HOMING) {
+        abortMove();
+        reportEvent(STATUS_PREFIX_INFO, "Homing paused. Send resume to continue.");
+        reportEvent(STATUS_PREFIX_DONE, "pause");
+    } else if (m_state == STATE_MOVING) {
+        if (m_moveState == MOVE_ACTIVE || m_moveState == MOVE_STARTING ||
+            m_moveState == MOVE_TO_HOME || m_moveState == MOVE_TO_RETRACT) {
+            abortMove();
+            m_moveState = MOVE_PAUSED;
+            reportEvent(STATUS_PREFIX_INFO, "Move paused. Send resume to continue.");
+            reportEvent(STATUS_PREFIX_DONE, "pause");
+        } else {
+            reportEvent(STATUS_PREFIX_INFO, "No active move to pause.");
+            reportEvent(STATUS_PREFIX_DONE, "pause");
+        }
+    } else {
+        reportEvent(STATUS_PREFIX_INFO, "No active operation to pause.");
+        reportEvent(STATUS_PREFIX_DONE, "pause");
+    }
+}
+
+void Injector::resumeGeneralMove() {
+    if (m_state == STATE_HOMING) {
+        reportEvent(STATUS_PREFIX_INFO, "Homing resumed.");
+        reportEvent(STATUS_PREFIX_DONE, "resume");
+    } else if (m_state == STATE_MOVING) {
+        if (m_moveState == MOVE_PAUSED) {
+            long current_pos = m_motorA->PositionRefCommanded();
+            long steps_moved_so_far = current_pos - m_active_op_initial_axis_steps;
+            long remaining_steps = m_active_op_total_target_steps - std::abs(steps_moved_so_far);
+
+            if (remaining_steps > 0) {
+                m_active_op_remaining_steps = remaining_steps;
+                m_active_op_segment_initial_axis_steps = current_pos;
+                m_moveState = MOVE_RESUMING;
+                m_torqueLimit = (float)m_active_op_torque_percent;
+                m_moveStartTime = Milliseconds();
+                m_jouleIntegrationActive = (!m_forceLimitTriggered
+                    && strcmp(m_active_op_force_mode, "load_cell") == 0);
+                m_prevForceValid = false;
+                m_prev_position_mm = static_cast<double>(current_pos - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+                m_machineStrainBaselinePosMm = m_prev_position_mm;
+                m_prevMachineDeflectionMm = 0.0;
+                m_prevTotalDeflectionMm = 0.0;
+                m_machineEnergyJ = 0.0;
+                m_machineStrainContactActive = false;
+                startMove(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2);
+                reportEvent(STATUS_PREFIX_INFO, "Move resumed.");
+                reportEvent(STATUS_PREFIX_DONE, "resume");
+            } else {
+                reportEvent(STATUS_PREFIX_INFO, "Move already complete.");
+                fullyResetActiveMove();
+                m_state = STATE_STANDBY;
+                reportEvent(STATUS_PREFIX_DONE, "resume");
+            }
+        } else {
+            reportEvent(STATUS_PREFIX_INFO, "No paused move to resume.");
+            reportEvent(STATUS_PREFIX_DONE, "resume");
+        }
+    } else {
+        reportEvent(STATUS_PREFIX_INFO, "No paused operation to resume.");
+        reportEvent(STATUS_PREFIX_DONE, "resume");
+    }
+}
+
+void Injector::cancelGeneralMove() {
+    if (m_state == STATE_HOMING) {
+        abortMove();
+        m_homingPhase = HOMING_PHASE_IDLE;
+        m_homingState = HOMING_NONE;
+        m_state = STATE_STANDBY;
+        reportEvent(STATUS_PREFIX_INFO, "Homing cancelled. Returning to standby.");
+        reportEvent(STATUS_PREFIX_DONE, "cancel");
+    } else if (m_state == STATE_MOVING) {
+        abortMove();
+        finalizeAndResetActiveMove(false);
+        m_state = STATE_STANDBY;
+        reportEvent(STATUS_PREFIX_INFO, "Move cancelled. Returning to standby.");
+        reportEvent(STATUS_PREFIX_DONE, "cancel");
+    } else {
+        reportEvent(STATUS_PREFIX_INFO, "No active operation to cancel.");
+        reportEvent(STATUS_PREFIX_DONE, "cancel");
+    }
+}
+
+//==================================================================================================
+// --- Jog Move ---
+//==================================================================================================
+
+void Injector::jogMove(const char* args) {
+    float dist_mm1 = 0, dist_mm2 = 0, vel_mms = 0, accel_mms2 = 0;
+    int torque_percent = 0;
+
+    int parsed_count = std::sscanf(args, "%f %f %f %f %d", &dist_mm1, &dist_mm2, &vel_mms, &accel_mms2, &torque_percent);
+
+    if (parsed_count == 5) {
+        if (torque_percent <= 0 || torque_percent > 100) torque_percent = JOG_DEFAULT_TORQUE_PERCENT;
+        if (vel_mms <= 0) vel_mms = JOG_DEFAULT_VEL_MMS;
+        if (accel_mms2 <= 0) accel_mms2 = JOG_DEFAULT_ACCEL_MMSS;
+
+        long steps1 = (long)(dist_mm1 * STEPS_PER_MM_INJECTOR);
+        int velocity_sps = (int)(vel_mms * STEPS_PER_MM_INJECTOR);
+        int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_INJECTOR);
+
+        m_activeJogCommand = CMD_STR_JOG_MOVE;
+        m_state = STATE_JOGGING;
+        m_torqueLimit = (float)torque_percent;
+        startMove(steps1, velocity_sps, accel_sps2_val);
+    } else {
+        char errorMsg[STATUS_MESSAGE_BUFFER_SIZE];
+        std::snprintf(errorMsg, sizeof(errorMsg), "Invalid JOG_MOVE format. Expected 5 params, got %d.", parsed_count);
+        reportEvent(STATUS_PREFIX_ERROR, errorMsg);
+    }
+}
+
+//==================================================================================================
+// --- Torque Offset ---
+//==================================================================================================
+
+void Injector::setTorqueOffset(const char* args) {
+    float offset = 0.0f;
+    if (std::sscanf(args, "%f", &offset) == 1) {
+        m_torqueOffset = offset;
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Torque offset set to %.2f%%", offset);
+        reportEvent(STATUS_PREFIX_INFO, msg);
+    } else {
+        reportEvent(STATUS_PREFIX_ERROR, "Error: Invalid torque offset value.");
+    }
+}
+
+//==================================================================================================
+// --- Force Mode / Calibration / Polarity / Settings ---
+//==================================================================================================
+
+bool Injector::setForceMode(const char* mode) {
+    NvmManager &nvmMgr = NvmManager::Instance();
+    if (strcmp(mode, "motor_torque") == 0) {
+        strcpy(m_force_mode, "motor_torque");
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4), 0);
+        return true;
+    } else if (strcmp(mode, "load_cell") == 0) {
+        strcpy(m_force_mode, "load_cell");
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(4 * 4), 1);
+        return true;
+    }
+    return false;
+}
+
+const char* Injector::getForceMode() const {
+    return m_force_mode;
+}
+
+void Injector::setForceCalibrationOffset(float offset) {
+    if (strcmp(m_force_mode, "motor_torque") == 0) {
+        m_motor_torque_offset = offset;
+        NvmManager &nvmMgr = NvmManager::Instance();
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(6 * 4), (int32_t)(offset * 10000.0f));
+    }
+}
+
+void Injector::setForceCalibrationScale(float scale) {
+    if (strcmp(m_force_mode, "motor_torque") == 0) {
+        m_motor_torque_scale = scale;
+        NvmManager &nvmMgr = NvmManager::Instance();
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(5 * 4), (int32_t)(scale * 100000.0f));
+    }
+}
+
+float Injector::getForceCalibrationOffset() const {
+    if (strcmp(m_force_mode, "motor_torque") == 0) return m_motor_torque_offset;
+    return 0.0f;
+}
+
+float Injector::getForceCalibrationScale() const {
+    if (strcmp(m_force_mode, "motor_torque") == 0) return m_motor_torque_scale;
+    return 1.0f;
+}
+
+bool Injector::setPolarity(const char* polarity) {
+    NvmManager &nvmMgr = NvmManager::Instance();
+    if (strcmp(polarity, "normal") == 0) {
+        strcpy(m_polarity, "normal");
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(3 * 4), 0);
+        m_motorA->PolarityInvertSDDirection(false);
+        m_motorB->PolarityInvertSDDirection(false);
+        return true;
+    } else if (strcmp(polarity, "inverted") == 0) {
+        strcpy(m_polarity, "inverted");
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(3 * 4), 1);
+        m_motorA->PolarityInvertSDDirection(true);
+        m_motorB->PolarityInvertSDDirection(true);
+        return true;
+    }
+    return false;
+}
+
+const char* Injector::getPolarity() const {
+    return m_polarity;
+}
+
+bool Injector::setHomeOnBoot(const char* enabled) {
+    NvmManager &nvmMgr = NvmManager::Instance();
+    if (strcmp(enabled, "true") == 0) {
+        m_home_on_boot = true;
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(13 * 4), 1);
+        return true;
+    } else if (strcmp(enabled, "false") == 0) {
+        m_home_on_boot = false;
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(13 * 4), 0);
+        return true;
+    }
+    return false;
+}
+
+bool Injector::getHomeOnBoot() const {
+    return m_home_on_boot;
+}
+
+bool Injector::setPressThreshold(float threshold_kg) {
+    if (threshold_kg < 0.1f || threshold_kg > 50.0f) return false;
+    m_press_threshold_kg = threshold_kg;
+    NvmManager &nvmMgr = NvmManager::Instance();
+    int32_t bits;
+    memcpy(&bits, &threshold_kg, sizeof(float));
+    nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(15 * 4), bits);
+    return true;
+}
+
+//==================================================================================================
+// --- Low-Level Motion ---
+//==================================================================================================
+
 void Injector::startMove(long steps, int velSps, int accelSps2) {
     m_firstTorqueReading0 = true;
     m_firstTorqueReading1 = true;
 
     char logMsg[128];
-    snprintf(logMsg, sizeof(logMsg), "startMove called: steps=%ld, vel=%d, accel=%d, torque=%.1f", steps, velSps, accelSps2, m_torqueLimit);
+    snprintf(logMsg, sizeof(logMsg), "startMove: steps=%ld, vel=%d, accel=%d, torque=%.1f",
+             steps, velSps, accelSps2, m_torqueLimit);
     reportEvent(STATUS_PREFIX_INFO, logMsg);
 
     if (steps == 0) {
@@ -655,31 +1740,51 @@ void Injector::startMove(long steps, int velSps, int accelSps2) {
     m_motorB->Move(steps);
 }
 
-/**
- * @brief Checks if either of the injector motors are currently active.
- */
-bool Injector::isMoving() {
-    if (!m_isEnabled) return false;
-    bool m0_moving = m_motorA->StatusReg().bit.StepsActive;
-    bool m1_moving = m_motorB->StatusReg().bit.StepsActive;
-    return (m0_moving || m1_moving);
+void Injector::startMoveAxis(int axis, long steps, int velSps, int accelSps2) {
+    if (steps == 0) return;
+    if (axis == 0) {
+        m_motorA->VelMax(velSps);
+        m_motorA->AccelMax(accelSps2);
+        m_motorA->Move(steps);
+    } else {
+        m_motorB->VelMax(velSps);
+        m_motorB->AccelMax(accelSps2);
+        m_motorB->Move(steps);
+    }
 }
 
-/**
- * @brief Gets a smoothed torque value from a motor using an EWMA filter.
- */
+void Injector::stopAxis(int axis) {
+    if (axis == 0) m_motorA->MoveStopDecel();
+    else           m_motorB->MoveStopDecel();
+}
+
+bool Injector::isMoving() {
+    if (!m_isEnabled) return false;
+    return m_motorA->StatusReg().bit.StepsActive || m_motorB->StatusReg().bit.StepsActive;
+}
+
+bool Injector::isAxisMoving(int axis) {
+    if (!m_isEnabled) return false;
+    if (axis == 0) return m_motorA->StatusReg().bit.StepsActive;
+    return m_motorB->StatusReg().bit.StepsActive;
+}
+
+//==================================================================================================
+// --- Torque Sensing ---
+//==================================================================================================
+
 float Injector::getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool *firstRead) {
-    // If the motor is not actively moving, torque is effectively zero.
-    if (!motor->StatusReg().bit.StepsActive) {
-        *firstRead = true; // Reset for the next move
+    if (!motor->StatusReg().bit.StepsActive && m_moveState != MOVE_ACTIVE) {
+        *firstRead = true;
         return 0.0f;
     }
 
     float currentRawTorque = motor->HlfbPercent();
 
-    // The driver may return the sentinel value if a reading is not available yet (e.g., at the start of a move).
-    // Treat it as "no data" and return 0 to avoid false torque limit trips.
     if (currentRawTorque == TORQUE_HLFB_AT_POSITION) {
+        if (m_moveState == MOVE_ACTIVE && !*firstRead) {
+            return *smoothedValue + m_torqueOffset;
+        }
         return 0.0f;
     }
 
@@ -692,43 +1797,114 @@ float Injector::getSmoothedTorque(MotorDriver *motor, float *smoothedValue, bool
     return *smoothedValue + m_torqueOffset;
 }
 
-/**
- * @brief Checks if the torque on either motor has exceeded the current limit.
- */
 bool Injector::checkTorqueLimit() {
     if (isMoving()) {
         float torque0 = getSmoothedTorque(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
         float torque1 = getSmoothedTorque(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
 
-        bool m0_over_limit = (torque0 != TORQUE_HLFB_AT_POSITION && std::abs(torque0) > m_torqueLimit);
-        bool m1_over_limit = (torque1 != TORQUE_HLFB_AT_POSITION && std::abs(torque1) > m_torqueLimit);
+        bool m0_over = (torque0 != TORQUE_HLFB_AT_POSITION && std::abs(torque0) > m_torqueLimit);
+        bool m1_over = (torque1 != TORQUE_HLFB_AT_POSITION && std::abs(torque1) > m_torqueLimit);
 
-        if (m0_over_limit || m1_over_limit) {
-            abortMove();
-            char torque_msg[STATUS_MESSAGE_BUFFER_SIZE];
-            std::snprintf(torque_msg, sizeof(torque_msg), "TORQUE LIMIT REACHED (%.1f%%)", m_torqueLimit);
-            reportEvent(STATUS_PREFIX_INFO, torque_msg);
-            return true;
-        }
+        if (m0_over || m1_over) return true;
     }
     return false;
 }
 
-/**
- * @brief Finalizes a dispense operation, calculating the total dispensed volume.
- */
+//==================================================================================================
+// --- Force Sensor & Limit Handling ---
+//==================================================================================================
+
+bool Injector::checkForceSensorStatus(const char** errorMsg) {
+    if (strcmp(m_force_mode, "motor_torque") == 0) {
+        return false;
+    }
+    *errorMsg = "Load cell not available on Fillhead. Use motor_torque mode.";
+    return true;
+}
+
+void Injector::handleLimitReached(const char* limit_type, float limit_value) {
+    abortMove();
+    m_jouleIntegrationActive = false;
+    m_forceLimitTriggered = true;
+    m_prevForceValid = false;
+
+    if (m_activeMoveCommand &&
+        (strcmp(m_activeMoveCommand, "move_abs") == 0 || strcmp(m_activeMoveCommand, "move_inc") == 0)) {
+        long pos = m_motorA->PositionRefCommanded();
+        m_endpoint_mm = static_cast<float>(
+            static_cast<double>(pos - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR);
+    }
+
+    char msg[STATUS_MESSAGE_BUFFER_SIZE];
+    snprintf(msg, sizeof(msg), "%s reached.", limit_type);
+    reportEvent(STATUS_PREFIX_INFO, msg);
+
+    if (strcmp(m_active_op_force_action, "retract") == 0) {
+        reportEvent(STATUS_PREFIX_INFO, "Force limit reached, retracting...");
+        m_originalMoveCommand = m_activeMoveCommand;
+        long retract_target = (m_retractReferenceSteps == LONG_MIN)
+            ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
+        m_active_op_force_action[0] = '\0';
+        m_moveState = MOVE_TO_HOME;
+        m_activeMoveCommand = "retract";
+        m_active_op_target_position_steps = retract_target;
+        long cur = m_motorA->PositionRefCommanded();
+        long steps = retract_target - cur;
+        m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+        float spd = (m_retractSpeedMms > 0.0f) ? m_retractSpeedMms : RETRACT_DEFAULT_SPEED_MMS;
+        if (spd > 100.0f) spd = 100.0f;
+        int vel = static_cast<int>(spd * STEPS_PER_MM_INJECTOR);
+        m_active_op_velocity_sps = vel;
+        m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+        startMove(steps, vel, m_moveDefaultAccelSPS2);
+        reportEvent(STATUS_PREFIX_START, "retract");
+    } else if (strcmp(m_active_op_force_action, "abort") == 0) {
+        if (m_activeMoveCommand) {
+            char err[STATUS_MESSAGE_BUFFER_SIZE];
+            snprintf(err, sizeof(err), "%s aborted due to force limit", m_activeMoveCommand);
+            reportEvent(STATUS_PREFIX_ERROR, err);
+        }
+        long retract_target = (m_retractReferenceSteps == LONG_MIN)
+            ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
+        m_active_op_force_action[0] = '\0';
+        m_moveState = MOVE_TO_HOME;
+        m_activeMoveCommand = "retract";
+        m_active_op_target_position_steps = retract_target;
+        long cur = m_motorA->PositionRefCommanded();
+        long steps = retract_target - cur;
+        m_torqueLimit = DEFAULT_INJECTOR_TORQUE_LIMIT;
+        float spd = (m_retractSpeedMms > 0.0f) ? m_retractSpeedMms : RETRACT_DEFAULT_SPEED_MMS;
+        if (spd > 100.0f) spd = 100.0f;
+        int vel = static_cast<int>(spd * STEPS_PER_MM_INJECTOR);
+        m_active_op_velocity_sps = vel;
+        m_active_op_accel_sps2 = m_moveDefaultAccelSPS2;
+        startMove(steps, vel, m_moveDefaultAccelSPS2);
+        reportEvent(STATUS_PREFIX_START, "retract");
+    } else if (strcmp(m_active_op_force_action, "skip") == 0) {
+        if (m_activeMoveCommand) {
+            reportEvent(STATUS_PREFIX_DONE, m_activeMoveCommand);
+        }
+        finalizeAndResetActiveMove(true);
+        m_state = STATE_STANDBY;
+    } else {
+        // "hold" — pause and signal host to hold script
+        m_moveState = MOVE_PAUSED;
+        sendEvent(EVENT_SCRIPT_HOLD);
+    }
+}
+
+//==================================================================================================
+// --- Dispense Operation Finalization ---
+//==================================================================================================
+
 void Injector::finalizeAndResetActiveDispenseOperation(bool success) {
     if (success) {
-        // With the new polling logic in updateState, m_active_op_total_dispensed_ml should be up-to-date.
         m_last_completed_dispense_ml = m_active_op_total_dispensed_ml;
         m_cumulative_dispensed_ml += m_active_op_total_dispensed_ml;
     }
     fullyResetActiveDispenseOperation();
 }
 
-/**
- * @brief Resets all variables related to an active dispense operation.
- */
 void Injector::fullyResetActiveDispenseOperation() {
     m_active_op_target_ml = 0.0f;
     m_active_op_total_dispensed_ml = 0.0f;
@@ -741,44 +1917,144 @@ void Injector::fullyResetActiveDispenseOperation() {
     m_activeFeedCommand = nullptr;
 }
 
+//==================================================================================================
+// --- General Move Finalization ---
+//==================================================================================================
+
+void Injector::finalizeAndResetActiveMove(bool success) {
+    if (success) {
+        m_last_completed_distance_mm = m_active_op_total_distance_mm;
+        m_cumulative_distance_mm += m_active_op_total_distance_mm;
+    }
+    fullyResetActiveMove();
+}
+
+void Injector::fullyResetActiveMove() {
+    m_active_op_force_limit_kg = 0.0f;
+    m_active_op_force_action[0] = '\0';
+    strncpy(m_active_op_force_mode, "motor_torque", sizeof(m_active_op_force_mode) - 1);
+    m_active_op_force_mode[sizeof(m_active_op_force_mode) - 1] = '\0';
+    m_active_op_total_distance_mm = 0.0f;
+    m_last_completed_distance_mm = 0.0f;
+    m_active_op_total_target_steps = 0;
+    m_active_op_remaining_steps = 0;
+    m_active_op_segment_initial_axis_steps = 0;
+    m_active_op_initial_axis_steps = 0;
+    m_activeMoveCommand = nullptr;
+    m_originalMoveCommand = nullptr;
+    m_jouleIntegrationActive = false;
+    m_forceLimitTriggered = false;
+    m_prevForceValid = false;
+    m_machineStrainBaselinePosMm = 0.0;
+    m_prevMachineDeflectionMm = 0.0;
+    m_prevTotalDeflectionMm = 0.0;
+    m_machineEnergyJ = 0.0;
+    m_machineStrainContactActive = false;
+}
+
+//==================================================================================================
+// --- Joule Integration ---
+//==================================================================================================
+
+void Injector::updateJoules() {
+    if (!m_jouleIntegrationActive || m_state != STATE_MOVING) {
+        m_prevForceValid = false;
+        return;
+    }
+    // Motor torque mode has no continuous force signal — skip integration.
+    // Load cell mode is not available on Fillhead hardware — skip as well.
+    // Structure is preserved for future load cell addition.
+    m_jouleIntegrationActive = false;
+    m_prevForceValid = false;
+}
+
+//==================================================================================================
+// --- Event Reporting ---
+//==================================================================================================
+
 void Injector::reportEvent(const char* statusType, const char* message) {
     char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
     snprintf(fullMsg, sizeof(fullMsg), "Injector: %s", message);
     m_controller->reportEvent(statusType, fullMsg);
 }
 
-/**
- * @brief Assembles the injector-specific portion of the telemetry string.
- */
+//==================================================================================================
+// --- Telemetry ---
+//==================================================================================================
+
 const char* Injector::getTelemetryString() {
     float displayTorque0 = getSmoothedTorque(m_motorA, &m_smoothedTorqueValue0, &m_firstTorqueReading0);
     float displayTorque1 = getSmoothedTorque(m_motorB, &m_smoothedTorqueValue1, &m_firstTorqueReading1);
-    
+
     long current_pos_steps_m0 = m_motorA->PositionRefCommanded();
     float machine_pos_mm = (float)(current_pos_steps_m0 - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
     float cartridge_pos_mm = (float)(current_pos_steps_m0 - m_cartridgeHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
 
-    int enabled0 = m_motorA->StatusReg().bit.Enabled;
-    int enabled1 = m_motorB->StatusReg().bit.Enabled;
+    int enabled0 = m_isEnabled ? 1 : 0;
+    int enabled1 = m_isEnabled ? 1 : 0;
 
     float live_cumulative_ml = m_cumulative_dispensed_ml + m_active_op_total_dispensed_ml;
 
-    std::snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
-    "inj_t0:%.1f,inj_t1:%.1f,"
-    "inj_h_mach:%d,inj_h_cart:%d,"
-    "inj_mach_mm:%.2f,inj_cart_mm:%.2f,"
-    "inj_cumulative_ml:%.2f,inj_active_ml:%.2f,inj_tgt_ml:%.2f,"
-    "enabled0:%d,enabled1:%d,"
-    "injector_state:%d",
-    displayTorque0, displayTorque1,
-    (int)m_homingMachineDone, (int)m_homingCartridgeDone,
-    machine_pos_mm, cartridge_pos_mm,
-    live_cumulative_ml, m_active_op_total_dispensed_ml, m_active_op_target_ml,
-    enabled0, enabled1,
-    (int)m_state
-    );
+    // Motor torque-derived force estimate (always available)
+    float avg_torque = (displayTorque0 + displayTorque1) / 2.0f;
+    float force_motor_torque = (avg_torque - m_motor_torque_offset) / m_motor_torque_scale;
+    if (force_motor_torque < 0.0f) force_motor_torque = 0.0f;
+    if (force_motor_torque > 2000.0f) force_motor_torque = 2000.0f;
+
+    // Force limit for telemetry display
+    float force_limit;
+    if (m_state == STATE_MOVING && m_active_op_force_limit_kg > 0.1f) {
+        force_limit = m_active_op_force_limit_kg;
+    } else {
+        force_limit = (strcmp(m_force_mode, "load_cell") == 0) ? 1000.0f : 2000.0f;
+    }
+
+    // Retract position
+    float retract_pos;
+    if (m_retractReferenceSteps == LONG_MIN) {
+        retract_pos = 0.0f;
+    } else {
+        retract_pos = (float)(m_retractReferenceSteps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR;
+    }
+
+    float target_pos = (float)((double)(m_active_op_target_position_steps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR);
+
+    // Two-stage snprintf to fit as much as possible into 256 bytes.
+    // Stage 1: Core Fillhead injection telemetry
+    int n = std::snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
+        "inj_t0:%.1f,inj_t1:%.1f,"
+        "inj_h_mach:%d,inj_h_cart:%d,"
+        "inj_mach_mm:%.2f,inj_cart_mm:%.2f,"
+        "inj_cumulative_ml:%.2f,inj_active_ml:%.2f,inj_tgt_ml:%.2f,"
+        "enabled0:%d,enabled1:%d,"
+        "injector_state:%d",
+        displayTorque0, displayTorque1,
+        (int)m_homingMachineDone, (int)m_homingCartridgeDone,
+        machine_pos_mm, cartridge_pos_mm,
+        live_cumulative_ml, m_active_op_total_dispensed_ml, m_active_op_target_ml,
+        enabled0, enabled1,
+        (int)m_state);
+
+    // Stage 2: Pressboi-compatible fields (appended if space remains)
+    if (n > 0 && (size_t)n < sizeof(m_telemetryBuffer) - 1) {
+        std::snprintf(m_telemetryBuffer + n, sizeof(m_telemetryBuffer) - n,
+            ",fmt:%.1f,fl:%.1f,j:%.4f,"
+            "cp:%.3f,rp:%.2f,tp:%.2f,"
+            "ep:%.3f,sp:%.3f,pt:%.1f,"
+            "hs0:%d,hs1:%d,fm:%s,pol:%s",
+            force_motor_torque, force_limit, (float)m_joules,
+            machine_pos_mm, retract_pos, target_pos,
+            m_endpoint_mm, m_press_startpoint_mm, m_press_threshold_kg,
+            getHomeSensorStateM0() ? 1 : 0, getHomeSensorStateM1() ? 1 : 0,
+            m_force_mode, m_polarity);
+    }
+
     return m_telemetryBuffer;
 }
+
+//==================================================================================================
+// --- Status Queries ---
+//==================================================================================================
 
 bool Injector::isBusy() const {
     return m_state != STATE_STANDBY;
@@ -790,6 +2066,7 @@ const char* Injector::getState() const {
         case STATE_HOMING:      return "Homing";
         case STATE_JOGGING:     return "Jogging";
         case STATE_FEEDING:     return "Feeding";
+        case STATE_MOVING:      return "Moving";
         case STATE_MOTOR_FAULT: return "Fault";
         default:                return "Unknown";
     }
@@ -797,4 +2074,38 @@ const char* Injector::getState() const {
 
 bool Injector::isInFault() const {
     return m_motorA->StatusReg().bit.MotorInFault || m_motorB->StatusReg().bit.MotorInFault;
+}
+
+//==================================================================================================
+// --- Home Sensor Functions (Gantry Squaring) ---
+//==================================================================================================
+
+void Injector::setupHomeSensors() {
+    uint16_t filterSamples = HOME_SENSOR_FILTER_MS * 5;
+
+    HOME_SENSOR_M0.Mode(Connector::INPUT_DIGITAL);
+    HOME_SENSOR_M1.Mode(Connector::INPUT_DIGITAL);
+
+    HOME_SENSOR_M0.FilterLength(filterSamples);
+    HOME_SENSOR_M1.FilterLength(filterSamples);
+
+    m_homeSensorsInitialized = true;
+    reportEvent(STATUS_PREFIX_INFO, "Home sensors initialized (DI6=M1, DI7=M0).");
+}
+
+bool Injector::isHomeSensorTriggered(int axis) {
+    return (getHomeSensorState(axis) == HOME_SENSOR_ACTIVE_STATE);
+}
+
+bool Injector::getHomeSensorState(int axis) {
+    if (axis == 0) return HOME_SENSOR_M0.State() != 0;
+    return HOME_SENSOR_M1.State() != 0;
+}
+
+bool Injector::getHomeSensorStateM0() const {
+    return HOME_SENSOR_M0.State() == (HOME_SENSOR_ACTIVE_STATE ? 1 : 0);
+}
+
+bool Injector::getHomeSensorStateM1() const {
+    return HOME_SENSOR_M1.State() == (HOME_SENSOR_ACTIVE_STATE ? 1 : 0);
 }

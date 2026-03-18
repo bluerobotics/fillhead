@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="14.0">
   <PropertyGroup>
     <SchemaVersion>2.0</SchemaVersion>
@@ -101,6 +101,8 @@
             <Value>../lib/LwIP/LwIP/src/include</Value>
             <Value>../lib/LwIP/LwIP/port/include</Value>
             <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+            <Value>../inc</Value>
+            <Value>../definition</Value>
           </ListValues>
         </armgcccpp.compiler.directories.IncludePaths>
         <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
@@ -119,6 +121,7 @@
           <ListValues>
             <Value>%24(ProjectDir)\Device_Startup</Value>
             <Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Lib\GCC</Value>
+            <Value>../../../../../../Program Files (x86)/Atmel/Studio/7.0/packs/arm/CMSIS/5.2.0/CMSIS/Lib/GCC</Value>
           </ListValues>
         </armgcccpp.linker.libraries.LibrarySearchPaths>
         <armgcccpp.linker.optimization.GarbageCollectUnusedSections>True</armgcccpp.linker.optimization.GarbageCollectUnusedSections>
@@ -217,6 +220,7 @@
           <ListValues>
             <Value>%24(ProjectDir)\Device_Startup</Value>
             <Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Lib\GCC</Value>
+            <Value>../../../../../../Program Files (x86)/Atmel/Studio/7.0/packs/arm/CMSIS/5.2.0/CMSIS/Lib/GCC</Value>
           </ListValues>
         </armgcccpp.linker.libraries.LibrarySearchPaths>
         <armgcccpp.linker.optimization.GarbageCollectUnusedSections>True</armgcccpp.linker.optimization.GarbageCollectUnusedSections>
@@ -268,6 +272,12 @@
     <Compile Include="inc\vacuum_controller.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="inc\commands.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="inc\events.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="Device_Startup\flash_with_bootloader.ld">
       <SubType>compile</SubType>
     </Compile>
@@ -293,6 +303,12 @@
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="src\error_log.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\commands.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\events.cpp">
       <SubType>compile</SubType>
     </Compile>
     <None Include="Device_Startup\flash_without_bootloader.ld">

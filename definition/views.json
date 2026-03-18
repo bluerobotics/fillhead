@@ -1,0 +1,68 @@
+{
+  "fill_operator_view": {
+    "name": "fill operator view",
+    "description": "Simplified fill operation interface with large volume and valve state displays",
+    "icon": "",
+    "components": [
+      {
+        "type": "large_display",
+        "label": "DISPENSED VOLUME",
+        "variable": "fillhead.injection_cumulative_ml",
+        "unit": "mL",
+        "color_ranges": [
+          { "max": 10, "color": "default" },
+          { "max": 50, "color": "green" },
+          { "max": 90, "color": "yellow" },
+          { "min": 90, "color": "red" }
+        ]
+      },
+      {
+        "type": "valve_state_display",
+        "label": "VALVE STATES",
+        "variables": [
+          { "name": "Injection Valve", "variable": "fillhead.inj_valve_state" },
+          { "name": "Vacuum Valve", "variable": "fillhead.vac_valve_state" }
+        ]
+      },
+      {
+        "type": "state_display",
+        "variable": "fillhead.main_state"
+      }
+    ]
+  },
+  "injection_operator_view": {
+    "name": "injection operator view",
+    "description": "Simplified injection operation interface with volume and cycle monitoring",
+    "icon": "",
+    "components": [
+      {
+        "type": "large_display",
+        "label": "VOLUME",
+        "variable": "fillhead.injection_active_ml",
+        "unit": "mL"
+      },
+      {
+        "type": "large_display",
+        "label": "POSITION",
+        "variable": "fillhead.current_pos",
+        "unit": "mm"
+      },
+      {
+        "type": "valve_state_display",
+        "label": "VALVE STATES",
+        "variables": [
+          { "name": "Injection Valve", "variable": "fillhead.inj_valve_state" },
+          { "name": "Vacuum Valve", "variable": "fillhead.vac_valve_state" }
+        ]
+      },
+      {
+        "type": "state_display",
+        "variable": "fillhead.main_state"
+      },
+      {
+        "type": "cycle_counter",
+        "label": "CYCLES"
+      }
+    ]
+  }
+}

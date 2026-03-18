@@ -1,4 +1,5 @@
 {
+  "device_name": "fillhead",
   "firmware_type": "clearcore",
   "repo": "bluerobotics/fillhead",
   "asset_name": "fillhead.uf2",
@@ -7,4 +8,3 @@
   "volume_label": "CLEAR_BOOT",
   "usb_identifiers": ["Fillhead", "ClearCore"]
 }
-

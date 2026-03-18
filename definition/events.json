@@ -1,25 +1,22 @@
 {
+    "prefix": "FILLHEAD_EVENT: ",
     "script_run": {
         "device": "fillhead",
-        "description": "Firmware requesting script to start or resume execution. Sent when conditions are safe to continue.",
-        "type": "script_control",
+        "description": "Firmware requesting script to start or resume execution.",
         "params": []
     },
     "script_hold": {
         "device": "fillhead",
-        "description": "Firmware requesting script to pause execution. Sent when a safety condition is triggered or operator requests pause.",
-        "type": "script_control",
+        "description": "Firmware requesting script to pause execution.",
         "params": [
-            { "parameter": "reason", "type": "string", "optional": true, "description": "Human-readable reason for the hold" }
+            { "parameter": "reason", "type": "string" }
         ]
     },
     "script_reset": {
         "device": "fillhead",
-        "description": "Firmware requesting script to abort and reset to beginning. Sent on critical errors or when operator presses reset button.",
-        "type": "script_control",
+        "description": "Firmware requesting script to abort and reset.",
         "params": [
-            { "parameter": "reason", "type": "string", "optional": true, "description": "Human-readable reason for the reset" }
+            { "parameter": "reason", "type": "string" }
         ]
     }
 }
-

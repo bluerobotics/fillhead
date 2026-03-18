@@ -276,12 +276,12 @@ void PinchValve::updateState() {
  */
 void PinchValve::handleCommand(Command cmd, const char* args) {
     // Prevent new motion commands while busy, unless it's an abort/reset.
-    if (isBusy() && cmd != CMD_ABORT && cmd != CMD_CLEAR_ERRORS) {
+    if (isBusy() && cmd != CMD_ABORT && cmd != CMD_RESET) {
         reportEvent(STATUS_PREFIX_ERROR, "Valve is busy.");
         return;
     }
     // Prevent motion if in an error state.
-    if (m_state == VALVE_ERROR && cmd != CMD_CLEAR_ERRORS) {
+    if (m_state == VALVE_ERROR && cmd != CMD_RESET) {
         reportEvent(STATUS_PREFIX_ERROR, "Valve is in an error state. Reset required.");
         return;
     }

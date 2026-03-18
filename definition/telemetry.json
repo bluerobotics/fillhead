@@ -1,15 +1,9 @@
 {
     "main_state": {
-        "type": "int",
-        "default": 0,
-        "map": {
-            "0": "standby",
-            "1": "busy",
-            "2": "error",
-            "3": "disabled",
-            "4": "clearing errors"
-        },
-        "help": "Overall fillhead system state"
+        "type": "string",
+        "default": "standby",
+        "help": "Overall fillhead system state",
+        "gui_var": "fillhead_main_state_var"
     },
     "injector_state": {
         "type": "int",
@@ -21,7 +15,8 @@
             "3": "feeding",
             "4": "motor fault"
         },
-        "help": "Current operational state of the injector motors"
+        "help": "Current operational state of the injector motors",
+        "gui_var": "fillhead_injector_state_var"
     },
     "inj_valve_state": {
         "type": "int",
@@ -37,7 +32,8 @@
             "7": "resetting",
             "8": "error"
         },
-        "help": "Current state of the injection pinch valve"
+        "help": "Current state of the injection pinch valve",
+        "gui_var": "fillhead_inj_valve_state_var"
     },
     "vac_valve_state": {
         "type": "int",
@@ -53,7 +49,8 @@
             "7": "resetting",
             "8": "error"
         },
-        "help": "Current state of the vacuum pinch valve"
+        "help": "Current state of the vacuum pinch valve",
+        "gui_var": "fillhead_vac_valve_state_var"
     },
     "heater_state": {
         "type": "int",
@@ -62,7 +59,8 @@
             "0": "off",
             "1": "active"
         },
-        "help": "Heater PID control status"
+        "help": "Heater PID control status",
+        "gui_var": "fillhead_heater_state_var"
     },
     "vacuum_state": {
         "type": "int",
@@ -75,14 +73,16 @@
             "4": "on",
             "5": "error"
         },
-        "help": "Current vacuum system operation state"
+        "help": "Current vacuum system operation state",
+        "gui_var": "fillhead_vacuum_state_var"
     },
     "injector_torque": {
         "unit": "%",
         "type": "float",
         "default": 0.0,
         "precision": 1,
-        "help": "Current motor torque percentage for injector"
+        "help": "Current motor torque percentage for injector",
+        "gui_var": "fillhead_injector_torque_var"
     },
     "injector_homed": {
         "type": "int",
@@ -91,28 +91,32 @@
             "0": "not homed",
             "1": "homed"
         },
-        "help": "Indicates if injector has been homed to machine zero"
+        "help": "Indicates if injector has been homed to machine zero",
+        "gui_var": "fillhead_injector_homed_var"
     },
     "injection_cumulative_ml": {
         "unit": "ml",
         "type": "float",
         "default": 0.0,
         "precision": 2,
-        "help": "Total volume dispensed since last cartridge home"
+        "help": "Total volume dispensed since last cartridge home",
+        "gui_var": "fillhead_injection_cumulative_ml_var"
     },
     "injection_active_ml": {
         "unit": "ml",
         "type": "float",
         "default": 0.0,
         "precision": 2,
-        "help": "Volume dispensed in current injection operation"
+        "help": "Volume dispensed in current injection operation",
+        "gui_var": "fillhead_injection_active_ml_var"
     },
     "injection_target_ml": {
         "unit": "ml",
         "type": "float",
         "default": 0.0,
         "precision": 2,
-        "help": "Target volume for current injection operation"
+        "help": "Target volume for current injection operation",
+        "gui_var": "fillhead_injection_target_ml_var"
     },
     "motors_enabled": {
         "type": "bool",
@@ -121,21 +125,24 @@
             "0": "disabled",
             "1": "enabled"
         },
-        "help": "Global motor power enable status"
+        "help": "Global motor power enable status",
+        "gui_var": "fillhead_motors_enabled_var"
     },
     "inj_valve_pos": {
         "unit": "mm",
         "type": "float",
         "default": 0.0,
         "precision": 2,
-        "help": "Current position of injection valve actuator"
+        "help": "Current position of injection valve actuator",
+        "gui_var": "fillhead_inj_valve_pos_var"
     },
     "inj_valve_torque": {
         "unit": "%",
         "type": "float",
         "default": 0.0,
         "precision": 1,
-        "help": "Current motor torque percentage for injection valve"
+        "help": "Current motor torque percentage for injection valve",
+        "gui_var": "fillhead_inj_valve_torque_var"
     },
     "inj_valve_homed": {
         "type": "bool",
@@ -144,21 +151,24 @@
             "0": "not homed",
             "1": "homed"
         },
-        "help": "Indicates if injection valve has been homed"
+        "help": "Indicates if injection valve has been homed",
+        "gui_var": "fillhead_inj_valve_homed_var"
     },
     "vac_valve_pos": {
         "unit": "mm",
         "type": "float",
         "default": 0.0,
         "precision": 2,
-        "help": "Current position of vacuum valve actuator"
+        "help": "Current position of vacuum valve actuator",
+        "gui_var": "fillhead_vac_valve_pos_var"
     },
     "vac_valve_motor_torque": {
         "unit": "%",
         "type": "float",
         "default": 0.0,
         "precision": 1,
-        "help": "Current motor torque percentage for vacuum valve"
+        "help": "Current motor torque percentage for vacuum valve",
+        "gui_var": "fillhead_vac_valve_motor_torque_var"
     },
     "vac_valve_homed": {
         "type": "bool",
@@ -167,27 +177,193 @@
             "0": "not homed",
             "1": "homed"
         },
-        "help": "Indicates if vacuum valve has been homed"
+        "help": "Indicates if vacuum valve has been homed",
+        "gui_var": "fillhead_vac_valve_homed_var"
     },
     "temp_c": {
         "unit": "C",
         "type": "float",
         "default": 25.0,
         "precision": 1,
-        "help": "Current material temperature from thermocouple"
+        "help": "Current material temperature from thermocouple",
+        "gui_var": "fillhead_temp_c_var"
     },
     "heater_setpoint": {
         "unit": "C",
         "type": "float",
         "default": 70.0,
         "precision": 1,
-        "help": "Target temperature setpoint for PID controller"
+        "help": "Target temperature setpoint for PID controller",
+        "gui_var": "fillhead_heater_setpoint_var"
     },
     "vacuum_psig": {
         "unit": "PSIG",
         "type": "float",
         "default": 0.5,
         "precision": 2,
-        "help": "Current vacuum pressure reading"
+        "help": "Current vacuum pressure reading",
+        "gui_var": "fillhead_vacuum_psig_var"
+    },
+    "force_load_cell": {
+        "unit": "kg",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Force from load cell sensor",
+        "gui_var": "fillhead_force_load_cell_var"
+    },
+    "force_motor_torque": {
+        "unit": "kg",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Force calculated from motor torque",
+        "gui_var": "fillhead_force_motor_torque_var"
+    },
+    "force_limit": {
+        "unit": "kg",
+        "type": "float",
+        "default": 1000.0,
+        "precision": 1,
+        "help": "Maximum force limit for current operation",
+        "gui_var": "fillhead_force_limit_var"
+    },
+    "force_source": {
+        "type": "string",
+        "default": "load_cell",
+        "help": "Source of force reading: load_cell or motor_torque",
+        "gui_var": "fillhead_force_source_var"
+    },
+    "force_adc_raw": {
+        "type": "int",
+        "default": 0,
+        "help": "Raw ADC value from HX711 load cell amplifier (for calibration)",
+        "gui_var": "fillhead_force_adc_raw_var"
+    },
+    "force_mode": {
+        "type": "string",
+        "default": "load_cell",
+        "help": "Active force sensing mode (load_cell or motor_torque)",
+        "gui_var": "fillhead_force_mode_var"
+    },
+    "joules": {
+        "unit": "J",
+        "type": "float",
+        "default": 0.0,
+        "precision": 3,
+        "help": "Energy expended during current move (force x distance integrated at 50Hz)",
+        "gui_var": "fillhead_joules_var"
+    },
+    "enabled0": {
+        "type": "int",
+        "default": 1,
+        "map": {
+            "0": "disabled",
+            "1": "enabled"
+        },
+        "help": "Power enable status for motor 0",
+        "gui_var": "fillhead_enabled0_var"
+    },
+    "enabled1": {
+        "type": "int",
+        "default": 1,
+        "map": {
+            "0": "disabled",
+            "1": "enabled"
+        },
+        "help": "Power enable status for motor 1",
+        "gui_var": "fillhead_enabled1_var"
+    },
+    "current_pos": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Current position of press axis",
+        "gui_var": "fillhead_current_pos_var"
+    },
+    "retract_pos": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Preset retract position for the press",
+        "gui_var": "fillhead_retract_pos_var"
+    },
+    "target_pos": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Target position for current move operation",
+        "gui_var": "fillhead_target_pos_var"
+    },
+    "endpoint": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Actual position where last move ended (force trigger or completion)",
+        "gui_var": "fillhead_endpoint_var"
+    },
+    "startpoint": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "help": "Position where press threshold was crossed (press started)",
+        "gui_var": "fillhead_startpoint_var"
+    },
+    "press_threshold": {
+        "unit": "kg",
+        "type": "float",
+        "default": 2.0,
+        "precision": 2,
+        "help": "Force threshold for energy/startpoint recording",
+        "gui_var": "fillhead_press_threshold_var"
+    },
+    "torque_avg": {
+        "unit": "%",
+        "type": "float",
+        "default": 0.0,
+        "precision": 1,
+        "help": "Average motor torque percentage",
+        "gui_var": "fillhead_torque_avg_var"
+    },
+    "homed": {
+        "type": "int",
+        "default": 0,
+        "map": {
+            "0": "not homed",
+            "1": "homed"
+        },
+        "help": "Indicates if press has been homed to zero position",
+        "gui_var": "fillhead_homed_var"
+    },
+    "home_sensor_m0": {
+        "type": "int",
+        "default": 0,
+        "map": {
+            "0": "inactive",
+            "1": "active"
+        },
+        "help": "Motor A (M0) home sensor state",
+        "gui_var": "fillhead_home_sensor_m0_var"
+    },
+    "home_sensor_m1": {
+        "type": "int",
+        "default": 0,
+        "map": {
+            "0": "inactive",
+            "1": "active"
+        },
+        "help": "Motor B (M1) home sensor state",
+        "gui_var": "fillhead_home_sensor_m1_var"
+    },
+    "polarity": {
+        "type": "string",
+        "default": "normal",
+        "help": "Coordinate system polarity (normal or inverted)",
+        "gui_var": "fillhead_polarity_var"
     }
 }

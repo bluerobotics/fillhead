@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="14.0">
   <PropertyGroup>
     <SchemaVersion>2.0</SchemaVersion>
@@ -107,6 +107,7 @@
       <Value>../hpl/gclk</Value>
       <Value>../hpl/mclk</Value>
       <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+      <Value>../../../../../../../../Program Files (x86)/Atmel/Studio/7.0/packs/arm/CMSIS/5.2.0/CMSIS/Include</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize most (-O3)</armgcc.compiler.optimization.level>
@@ -147,6 +148,7 @@
       <Value>../usb/class/cdc/device</Value>
       <Value>../usb/device</Value>
       <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+      <Value>../../../../../../../../Program Files (x86)/Atmel/Studio/7.0/packs/arm/CMSIS/5.2.0/CMSIS/Include</Value>
     </ListValues>
   </armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
@@ -219,6 +221,7 @@
       <Value>../hpl/gclk</Value>
       <Value>../hpl/mclk</Value>
       <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+      <Value>../../../../../../../../Program Files (x86)/Atmel/Studio/7.0/packs/arm/CMSIS/5.2.0/CMSIS/Include</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize most (-O3)</armgcc.compiler.optimization.level>
@@ -258,6 +261,7 @@
       <Value>../usb/class/cdc/device</Value>
       <Value>../usb/device</Value>
       <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+      <Value>../../../../../../../../Program Files (x86)/Atmel/Studio/7.0/packs/arm/CMSIS/5.2.0/CMSIS/Include</Value>
     </ListValues>
   </armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>

@@ -15,10 +15,16 @@
 //==================================================================================================
 #include "fillhead.h"
 #include "config.h"
+#include "events.h"
+#include "commands.h"
 #include "error_log.h"
-#include <cstring> // For C-style string functions like strchr, strstr
-#include <cstdlib> // For C-style functions like atoi
-#include <sam.h>   // For watchdog timer (WDT) register access
+#include "NvmManager.h"
+#include <cstring>
+
+using ClearCore::NvmManager;
+#include <cstdlib>
+#include <cstdio>
+#include <sam.h>
 
 //==================================================================================================
 // --- Global Watchdog State (Survives Reset) ---
@@ -30,6 +36,19 @@ __attribute__((section(".noinit"))) volatile uint32_t g_watchdogBreadcrumb;
 // Captured at boot time for accurate reporting (breadcrumb changes during normal operation).
 static uint32_t g_crashTimeBreadcrumb = 0;
 #endif
+
+//==================================================================================================
+// --- Global Instance & sendMessage ---
+//==================================================================================================
+
+Fillhead fillhead;
+
+void sendMessage(const char* msg) {
+    bool guiDiscovered = fillhead.m_comms.isGuiDiscovered();
+    IpAddress targetIp = guiDiscovered ? fillhead.m_comms.getGuiIp() : IpAddress(0, 0, 0, 0);
+    uint16_t targetPort = guiDiscovered ? fillhead.m_comms.getGuiPort() : 0;
+    fillhead.m_comms.enqueueTx(msg, targetIp, targetPort);
+}
 
 //==================================================================================================
 // --- Fillhead Class Implementation ---
@@ -60,6 +79,12 @@ Fillhead::Fillhead() :
     // Initialize timers for periodic tasks.
     m_lastTelemetryTime = 0;
     m_lastSensorSampleTime = 0;
+
+    // Initialize state machine recovery & homing members.
+    m_resetStartTime = 0;
+    m_faultGracePeriodEnd = 0;
+    m_homingPending = false;
+    m_homingDelayStart = 0;
 }
 
 
@@ -117,8 +142,73 @@ void Fillhead::setup() {
     feedWatchdog();
 #endif
 
+    g_errorLog.logf(LOG_INFO, "Firmware version: %s", FIRMWARE_VERSION);
+
     m_comms.reportEvent(STATUS_PREFIX_INFO, "Fillhead system setup complete. All components initialized.");
+
+    if (m_mainState != STATE_RECOVERED) {
+        if (m_injector.getHomeOnBoot()) {
+            m_homingPending = true;
+            m_homingDelayStart = 0;
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing enabled. Will initiate after startup stabilization...");
+        } else {
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing disabled. System ready in standby mode.");
+        }
+    }
 }
+
+#if WATCHDOG_ENABLED
+static const char* resolveBreadcrumb(uint32_t bc) {
+    switch (bc) {
+        case WD_BREADCRUMB_SAFETY_CHECK:      return "SAFETY_CHECK";
+        case WD_BREADCRUMB_COMMS_UPDATE:      return "COMMS_UPDATE";
+        case WD_BREADCRUMB_RX_DEQUEUE:        return "RX_DEQUEUE";
+        case WD_BREADCRUMB_UPDATE_STATE:      return "UPDATE_STATE";
+        case WD_BREADCRUMB_FORCE_UPDATE:      return "FORCE_UPDATE";
+        case WD_BREADCRUMB_MOTOR_UPDATE:      return "MOTOR_UPDATE";
+        case WD_BREADCRUMB_TELEMETRY:         return "TELEMETRY";
+        case WD_BREADCRUMB_UDP_PROCESS:       return "UDP_PROCESS";
+        case WD_BREADCRUMB_USB_PROCESS:       return "USB_PROCESS";
+        case WD_BREADCRUMB_TX_QUEUE:          return "TX_QUEUE";
+        case WD_BREADCRUMB_UDP_SEND:          return "UDP_SEND";
+        case WD_BREADCRUMB_NETWORK_REFRESH:   return "NETWORK_REFRESH";
+        case WD_BREADCRUMB_USB_SEND:          return "USB_SEND";
+        case WD_BREADCRUMB_USB_RECONNECT:     return "USB_RECONNECT";
+        case WD_BREADCRUMB_USB_RECOVERY:      return "USB_RECOVERY";
+        case WD_BREADCRUMB_REPORT_EVENT:      return "REPORT_EVENT";
+        case WD_BREADCRUMB_ENQUEUE_TX:        return "ENQUEUE_TX";
+        case WD_BREADCRUMB_MOTOR_IS_FAULT:    return "MOTOR_IS_FAULT";
+        case WD_BREADCRUMB_MOTOR_STATE_SWITCH:return "MOTOR_STATE_SWITCH";
+        case WD_BREADCRUMB_PROCESS_TX_QUEUE:  return "PROCESS_TX_QUEUE";
+        case WD_BREADCRUMB_TX_QUEUE_DEQUEUE:  return "TX_QUEUE_DEQUEUE";
+        case WD_BREADCRUMB_TX_QUEUE_UDP:      return "TX_QUEUE_UDP";
+        case WD_BREADCRUMB_TX_QUEUE_USB:      return "TX_QUEUE_USB";
+        case WD_BREADCRUMB_DISPATCH_CMD:      return "DISPATCH_CMD";
+        case WD_BREADCRUMB_PARSE_CMD:         return "PARSE_CMD";
+        case WD_BREADCRUMB_MOTOR_FAULT_REPORT:return "MOTOR_FAULT_REPORT";
+        case WD_BREADCRUMB_STATE_BUSY_CHECK:  return "STATE_BUSY_CHECK";
+        case WD_BREADCRUMB_UDP_PACKET_READ:   return "UDP_PACKET_READ";
+        case WD_BREADCRUMB_RX_ENQUEUE:        return "RX_ENQUEUE";
+        case WD_BREADCRUMB_USB_AVAILABLE:     return "USB_AVAILABLE";
+        case WD_BREADCRUMB_USB_READ:          return "USB_READ";
+        case WD_BREADCRUMB_NETWORK_INPUT:     return "NETWORK_INPUT";
+        case WD_BREADCRUMB_LWIP_INPUT:        return "LWIP_INPUT";
+        case WD_BREADCRUMB_LWIP_TIMEOUT:      return "LWIP_TIMEOUT";
+        case WD_BREADCRUMB_SETUP:             return "SETUP";
+        case WD_BREADCRUMB_SETUP_MOTOR_MODE:  return "SETUP_MOTOR_MODE";
+        case WD_BREADCRUMB_SETUP_COMMS:       return "SETUP_COMMS";
+        case WD_BREADCRUMB_SETUP_MOTOR:       return "SETUP_MOTOR";
+        case WD_BREADCRUMB_SETUP_FORCE:       return "SETUP_FORCE";
+        case WD_BREADCRUMB_SETUP_WD_RECOVERY: return "SETUP_WD_RECOVERY";
+        case WD_BREADCRUMB_SETUP_WD_INIT:     return "SETUP_WD_INIT";
+        case WD_BREADCRUMB_SETUP_USB:         return "SETUP_USB";
+        case WD_BREADCRUMB_SETUP_ETHERNET:    return "SETUP_ETHERNET";
+        case WD_BREADCRUMB_SETUP_DHCP:        return "SETUP_DHCP";
+        case WD_BREADCRUMB_SETUP_LINK_WAIT:   return "SETUP_LINK_WAIT";
+        default:                              return "UNKNOWN";
+    }
+}
+#endif
 
 /**
  * @brief The main execution loop for the Fillhead system.
@@ -168,26 +258,57 @@ void Fillhead::loop() {
         m_vacuum.updateVacuum();
     }
 	
-    // Always publish telemetry on schedule, even if GUI has not yet been
-    // discovered on the network. This ensures continuous USB telemetry,
-    // which the control app relies on to detect a healthy connection.
+    static uint32_t discoveryTime = 0;
+    static bool wasDiscovered = false;
+    if (!wasDiscovered && m_comms.isGuiDiscovered()) {
+        discoveryTime = now;
+        wasDiscovered = true;
+    }
+    if (!m_comms.isGuiDiscovered()) {
+        wasDiscovered = false;
+    }
+    bool skipForNetworkStability = m_comms.isGuiDiscovered() && (now - discoveryTime < 500);
+
     if (now - m_lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
 #if WATCHDOG_ENABLED
         g_watchdogBreadcrumb = WD_BREADCRUMB_TELEMETRY;
 #endif
         m_lastTelemetryTime = now;
-        publishTelemetry();
+        if (!skipForNetworkStability) {
+            publishTelemetry();
+        }
     }
 
-#if WATCHDOG_ENABLED
-    // Feed the watchdog at the end of the loop after all work is done.
-    feedWatchdog();
-#endif
+    if (m_homingPending && m_mainState == STATE_STANDBY) {
+        if (m_homingDelayStart == 0) {
+            m_homingDelayStart = now;
+        }
+        if (now - m_homingDelayStart > 2000) {
+            m_homingPending = false;
+            m_comms.reportEvent(STATUS_PREFIX_INFO, "Initiating delayed auto-home...");
+            m_injector.handleCommand(CMD_HOME, "");
+        }
+    }
+
+    static bool recovery_msg_sent = false;
+    if (m_mainState == STATE_RECOVERED && m_comms.isGuiDiscovered() && !recovery_msg_sent) {
+        recovery_msg_sent = true;
+        char recoveryMsg[128];
+        snprintf(recoveryMsg, sizeof(recoveryMsg),
+                 "Watchdog timeout at %s (0x%02X). Motors disabled. Send reset to clear.",
+                 resolveBreadcrumb(g_crashTimeBreadcrumb),
+                 (unsigned int)g_crashTimeBreadcrumb);
+        m_comms.reportEvent(STATUS_PREFIX_RECOVERY, recoveryMsg);
+    }
+    if (m_mainState != STATE_RECOVERED && recovery_msg_sent) {
+        recovery_msg_sent = false;
+    }
 }
 
 void Fillhead::performSafetyCheck() {
-    // Placeholder for future safety logic; mirrors Pressboi structure so that
-    // watchdog integration remains consistent between projects.
+#if WATCHDOG_ENABLED
+    feedWatchdog();
+#endif
 }
 
 // --- Private Methods: State, Command, and Telemetry Handling ---
@@ -200,25 +321,24 @@ void Fillhead::performSafetyCheck() {
  * functions for all sub-controllers.
  */
 void Fillhead::updateState() {
-    // First, update the state of all sub-controllers to ensure their fault status is current.
     m_injector.updateState();
     m_injectorValve.updateState();
     m_vacuumValve.updateState();
     m_heater.updateState();
     m_vacuum.updateState();
 
-    // Now, update the main Fillhead state based on the sub-controller states.
     switch (m_mainState) {
         case STATE_STANDBY:
         case STATE_BUSY: {
-            // In normal operation, constantly monitor for faults.
-            if (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault()) {
+            uint32_t now = Milliseconds();
+            bool inGracePeriod = (now < m_faultGracePeriodEnd);
+
+            if (!inGracePeriod && (m_injector.isInFault() || m_injectorValve.isInFault() || m_vacuumValve.isInFault())) {
                 m_mainState = STATE_ERROR;
-                reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Use CLEAR_ERRORS to reset.");
-                break; // Transition to error state and exit.
+                reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Send reset to recover.");
+                break;
             }
 
-            // If no faults, update the state based on whether any component is busy.
             if (m_injector.isBusy() || m_injectorValve.isBusy() || m_vacuumValve.isBusy() || m_vacuum.isBusy()) {
                 m_mainState = STATE_BUSY;
             } else {
@@ -228,28 +348,57 @@ void Fillhead::updateState() {
         }
 
         case STATE_CLEARING_ERRORS: {
-            // Wait for all components to finish their reset sequences.
             if (!m_injector.isBusy() && !m_injectorValve.isBusy() && !m_vacuumValve.isBusy() && !m_vacuum.isBusy()) {
-                // Now it's safe to cycle motor power.
                 m_injector.disable();
                 m_injectorValve.disable();
                 m_vacuumValve.disable();
-                Delay_ms(10); // Hardware requires a brief delay.
+                Delay_ms(10);
                 m_injector.enable();
                 m_injectorValve.enable();
                 m_vacuumValve.enable();
 
-                // Recovery is complete.
                 m_mainState = STATE_STANDBY;
                 reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete. System is in STANDBY state.");
             }
             break;
         }
 
+        case STATE_RESETTING: {
+            uint32_t now = Milliseconds();
+
+            // Phase 1: Wait 100ms after disable before re-enabling
+            if (now - m_resetStartTime < 100) break;
+
+            // Phase 2: Start motor enable (only once, when enable state is IDLE)
+            if (m_injector.getEnableState() == ENABLE_IDLE) {
+                MOTOR_INJECTOR_A.ClearAlerts();
+                MOTOR_INJECTOR_B.ClearAlerts();
+                MOTOR_VACUUM_VALVE.ClearAlerts();
+                MOTOR_INJECTION_VALVE.ClearAlerts();
+
+                m_injector.enable();
+                m_injectorValve.enable();
+                m_vacuumValve.enable();
+                break;
+            }
+
+            // Phase 3: Wait for injector enable to complete (non-blocking)
+            m_injector.updateEnableState();
+            if (!m_injector.isEnableComplete()) break;
+
+            // Phase 4: Enable complete - finish reset
+            m_faultGracePeriodEnd = now + 500;
+            standby();
+            reportEvent(STATUS_PREFIX_DONE, "reset");
+            m_mainState = STATE_STANDBY;
+            break;
+        }
+
+        case STATE_RECOVERED:
+            break;
+
         case STATE_ERROR:
         case STATE_DISABLED:
-            // These are terminal states. No logic is performed here.
-            // They are only exited by explicit commands (CLEAR_ERRORS, ENABLE).
             break;
     }
 }
@@ -263,23 +412,36 @@ void Fillhead::updateState() {
  * handles system-level commands itself.
  */
 void Fillhead::dispatchCommand(const Message& msg) {
-    Command command_enum = m_comms.parseCommand(msg.buffer);
-    
-    // If the system is in an error state, block most commands.
-    if (m_mainState == STATE_ERROR) {
-        if (command_enum != CMD_CLEAR_ERRORS && command_enum != CMD_DISABLE && command_enum != CMD_DISCOVER_DEVICE) {
-            m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System is in ERROR state. Send CLEAR_ERRORS to reset.");
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_PARSE_CMD;
+#endif
+    Command command_enum = parseCommand(msg.buffer);
+    const char* args = getCommandParams(msg.buffer, command_enum);
+
+#if WATCHDOG_ENABLED
+    g_watchdogBreadcrumb = WD_BREADCRUMB_DISPATCH_CMD;
+#endif
+
+    if (command_enum != CMD_DISCOVER_DEVICE) {
+        g_errorLog.logf(LOG_DEBUG, "Dispatch cmd: %s", msg.buffer);
+    }
+
+    if (m_mainState == STATE_RECOVERED) {
+        if (command_enum != CMD_DISCOVER_DEVICE && command_enum != CMD_RESET && command_enum != CMD_DUMP_ERROR_LOG) {
+            m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System in RECOVERED state. Send reset to clear.");
+            g_errorLog.logf(LOG_WARNING, "Cmd blocked (RECOVERED): %s", msg.buffer);
             return;
         }
     }
 
-    // Isolate arguments by finding the first space in the command string.
-    const char* args = strchr(msg.buffer, ' ');
-    if (args) {
-        args++; // Move pointer past the space to the start of the arguments.
+    if (m_mainState == STATE_ERROR) {
+        if (command_enum != CMD_DISCOVER_DEVICE && command_enum != CMD_RESET && command_enum != CMD_DUMP_ERROR_LOG) {
+            m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System in ERROR state. Send reset to recover.");
+            g_errorLog.logf(LOG_WARNING, "Cmd blocked (ERROR): %s", msg.buffer);
+            return;
+        }
     }
 
-    // Check if the command is an injection command and if the valve is ready.
     if (command_enum == CMD_INJECT_STATOR || command_enum == CMD_INJECT_ROTOR) {
         if (!m_injectorValve.isHomed() || !m_injectorValve.isOpen()) {
             reportEvent(STATUS_PREFIX_ERROR, "Injection command ignored: Injector valve is not homed and open.");
@@ -287,25 +449,54 @@ void Fillhead::dispatchCommand(const Message& msg) {
         }
     }
 
-    // --- Master Command Delegation Switchboard ---
     switch (command_enum) {
-        // --- System-Level Commands (Handled by Fillhead) ---
+        // --- System-Level Commands ---
         case CMD_DISCOVER_DEVICE: {
             char* portStr = strstr(msg.buffer, "PORT=");
-            m_comms.setGuiIp(msg.remoteIp);
-            m_comms.setGuiPort(portStr ? (uint16_t)atoi(portStr + 5) : msg.remotePort);
-            m_comms.setGuiDiscovered(true);
-            m_comms.reportEvent(STATUS_PREFIX_DISCOVERY, "DEVICE_ID=fillhead");
+            if (portStr) {
+                uint16_t guiPort = atoi(portStr + 5);
+
+                IpAddress localhost(127, 0, 0, 1);
+                bool fromUsb = (msg.remoteIp == localhost);
+
+                if (!fromUsb) {
+                    m_comms.setGuiIp(msg.remoteIp);
+                    m_comms.setGuiPort(guiPort);
+                    m_comms.setGuiDiscovered(true);
+                }
+
+                char discoveryMsg[128];
+                snprintf(discoveryMsg, sizeof(discoveryMsg), "%sDEVICE_ID=fillhead PORT=%d FW=%s",
+                         STATUS_PREFIX_DISCOVERY, LOCAL_PORT, FIRMWARE_VERSION);
+                m_comms.enqueueTx(discoveryMsg, msg.remoteIp, guiPort);
+            }
             break;
         }
+        case CMD_RESET:         clearErrors(); break;
         case CMD_ENABLE:        enable(); break;
         case CMD_DISABLE:       disable(); break;
         case CMD_ABORT:         abort(); break;
-        case CMD_CLEAR_ERRORS:  clearErrors(); break;
 
-        // --- Injector Motor Commands (Delegated to Injector) ---
+        // --- Pressboi Motion Commands (Delegated to Injector) ---
+        case CMD_HOME:
+        case CMD_MOVE_ABS:
+        case CMD_MOVE_INC:
+        case CMD_SET_RETRACT:
+        case CMD_RETRACT:
+        case CMD_PAUSE:
+        case CMD_RESUME:
+            m_injector.handleCommand(command_enum, args);
+            break;
+        case CMD_CANCEL:
+            m_injector.handleCommand(command_enum, args);
+            abort();
+            break;
+
+        // --- Fillhead Injection Commands (Delegated to Injector) ---
         case CMD_JOG_MOVE:
+        case CMD_MACHINE_HOME:
         case CMD_MACHINE_HOME_MOVE:
+        case CMD_CARTRIDGE_HOME:
         case CMD_CARTRIDGE_HOME_MOVE:
         case CMD_MOVE_TO_CARTRIDGE_HOME:
         case CMD_MOVE_TO_CARTRIDGE_RETRACT:
@@ -314,35 +505,28 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_PAUSE_INJECTION:
         case CMD_RESUME_INJECTION:
         case CMD_CANCEL_INJECTION:
-            // These are injector commands.
             m_injector.handleCommand(command_enum, args);
             break;
 
-        // --- Pinch Valve Commands (Delegated to respective PinchValve) ---
+        // --- Pinch Valve Commands ---
+        case CMD_INJECTION_VALVE_HOME:
         case CMD_INJECTION_VALVE_HOME_UNTUBED:
-            m_injectorValve.handleCommand(command_enum, args);
-            break;
         case CMD_INJECTION_VALVE_HOME_TUBED:
-            m_injectorValve.handleCommand(command_enum, args);
-            break;
         case CMD_INJECTION_VALVE_OPEN:
         case CMD_INJECTION_VALVE_CLOSE:
         case CMD_INJECTION_VALVE_JOG:
             m_injectorValve.handleCommand(command_enum, args);
             break;
+        case CMD_VACUUM_VALVE_HOME:
         case CMD_VACUUM_VALVE_HOME_UNTUBED:
-            m_vacuumValve.handleCommand(command_enum, args);
-            break;
         case CMD_VACUUM_VALVE_HOME_TUBED:
-            m_vacuumValve.handleCommand(command_enum, args);
-            break;
         case CMD_VACUUM_VALVE_OPEN:
         case CMD_VACUUM_VALVE_CLOSE:
         case CMD_VACUUM_VALVE_JOG:
             m_vacuumValve.handleCommand(command_enum, args);
             break;
 
-        // --- Heater Commands (Delegated to HeaterController) ---
+        // --- Heater Commands ---
         case CMD_HEATER_ON:
         case CMD_HEATER_OFF:
         case CMD_SET_HEATER_GAINS:
@@ -350,7 +534,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
             m_heater.handleCommand(command_enum, args);
             break;
 
-        // --- Vacuum Commands (Delegated to VacuumController) ---
+        // --- Vacuum Commands ---
         case CMD_VACUUM_ON:
         case CMD_VACUUM_OFF:
         case CMD_VACUUM_LEAK_TEST:
@@ -361,7 +545,228 @@ void Fillhead::dispatchCommand(const Message& msg) {
             m_vacuum.handleCommand(command_enum, args);
             break;
 
-        // --- Default/Unknown ---
+        // --- Pressboi Calibration/Config Commands (handled at system level) ---
+        case CMD_SET_FORCE_MODE: {
+            char mode[32] = "";
+            if (sscanf(args, "%31s", mode) == 1) {
+                if (m_injector.setForceMode(mode)) {
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Force mode set to '%s' and saved to NVM", mode);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "set_force_mode");
+                } else {
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid mode. Use 'motor_torque' or 'load_cell'");
+                }
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_mode");
+            }
+            break;
+        }
+        case CMD_SET_FORCE_OFFSET: {
+            float offset = 0.0f;
+            if (sscanf(args, "%f", &offset) == 1) {
+                m_injector.setForceCalibrationOffset(offset);
+                char msg_buf[128];
+                snprintf(msg_buf, sizeof(msg_buf), "Motor torque offset set to %.4f and saved to NVM", offset);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                reportEvent(STATUS_PREFIX_DONE, "set_force_offset");
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_offset");
+            }
+            break;
+        }
+        case CMD_SET_FORCE_SCALE: {
+            float scale = 1.0f;
+            if (sscanf(args, "%f", &scale) == 1) {
+                m_injector.setForceCalibrationScale(scale);
+                char msg_buf[128];
+                snprintf(msg_buf, sizeof(msg_buf), "Motor torque scale set to %.6f and saved to NVM", scale);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                reportEvent(STATUS_PREFIX_DONE, "set_force_scale");
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_force_scale");
+            }
+            break;
+        }
+        case CMD_SET_FORCE_ZERO: {
+            reportEvent(STATUS_PREFIX_ERROR, "set_force_zero: No load cell on Fillhead. Use motor_torque calibration.");
+            break;
+        }
+        case CMD_SET_STRAIN_CAL: {
+            float x4 = MACHINE_STRAIN_COEFF_X4, x3 = MACHINE_STRAIN_COEFF_X3;
+            float x2 = MACHINE_STRAIN_COEFF_X2, x1 = MACHINE_STRAIN_COEFF_X1;
+            float c = MACHINE_STRAIN_COEFF_C;
+            if (sscanf(args, "%f %f %f %f %f", &x4, &x3, &x2, &x1, &c) == 5) {
+                m_injector.setMachineStrainCoeffs(x4, x3, x2, x1, c);
+                char msg_buf[160];
+                snprintf(msg_buf, sizeof(msg_buf),
+                         "Machine strain polynomial updated: f(x) = %.3f x^4 %+.3f x^3 %+.3f x^2 %+.3f x %+.3f",
+                         x4, x3, x2, x1, c);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                reportEvent(STATUS_PREFIX_DONE, "set_strain_cal");
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameters for set_strain_cal. Need 5 coefficients.");
+            }
+            break;
+        }
+        case CMD_SET_POLARITY: {
+            char polarity[32] = "";
+            if (sscanf(args, "%31s", polarity) == 1) {
+                if (m_injector.setPolarity(polarity)) {
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Coordinate system polarity set to '%s' and saved to NVM", polarity);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "set_polarity");
+                } else {
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid polarity. Use 'normal' or 'inverted'");
+                }
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_polarity");
+            }
+            break;
+        }
+        case CMD_HOME_ON_BOOT: {
+            char enabled[32] = "";
+            if (sscanf(args, "%31s", enabled) == 1) {
+                if (m_injector.setHomeOnBoot(enabled)) {
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Home on boot set to '%s' and saved to NVM", enabled);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "home_on_boot");
+                } else {
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'");
+                }
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for home_on_boot");
+            }
+            break;
+        }
+        case CMD_SET_PRESS_THRESHOLD: {
+            float threshold_kg = 0.0f;
+            if (sscanf(args, "%f", &threshold_kg) == 1) {
+                if (m_injector.setPressThreshold(threshold_kg)) {
+                    char msg_buf[128];
+                    snprintf(msg_buf, sizeof(msg_buf), "Press threshold set to %.2f kg and saved to NVM", threshold_kg);
+                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                    reportEvent(STATUS_PREFIX_DONE, "set_press_threshold");
+                } else {
+                    reportEvent(STATUS_PREFIX_ERROR, "Invalid threshold. Must be between 0.1 and 50.0 kg");
+                }
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for set_press_threshold");
+            }
+            break;
+        }
+
+        case CMD_DUMP_ERROR_LOG: {
+            int count = g_errorLog.getEntryCount();
+            char line[160];
+            snprintf(line, sizeof(line), "Error log: %d entries", count);
+            reportEvent(STATUS_PREFIX_INFO, line);
+
+            const char* levelNames[] = {"DEBUG", "INFO", "WARN", "ERROR", "CRIT"};
+            for (int i = 0; i < count; i++) {
+                LogEntry entry;
+                if (g_errorLog.getEntry(i, &entry)) {
+                    const char* lvl = ((int)entry.level >= 0 && (int)entry.level <= 4)
+                        ? levelNames[(int)entry.level] : "???";
+                    snprintf(line, sizeof(line), "[%lu] %s: %s",
+                             (unsigned long)entry.timestamp, lvl, entry.message);
+                    sendMessage(line);
+                }
+#if WATCHDOG_ENABLED
+                if ((i % 5) == 4) feedWatchdog();
+#endif
+                Delay_ms(5);
+            }
+
+            int hbCount = g_heartbeatLog.getEntryCount();
+            snprintf(line, sizeof(line), "Heartbeat log: %d entries", hbCount);
+            sendMessage(line);
+            for (int i = 0; i < hbCount; i++) {
+                HeartbeatEntry hb;
+                if (g_heartbeatLog.getEntry(i, &hb)) {
+                    snprintf(line, sizeof(line), "[%lu] USB=%d NET=%d AVAIL=%d",
+                             (unsigned long)hb.timestamp, hb.usbConnected,
+                             hb.networkActive, hb.usbAvailable);
+                    sendMessage(line);
+                }
+#if WATCHDOG_ENABLED
+                if ((i % 5) == 4) feedWatchdog();
+#endif
+                Delay_ms(5);
+            }
+            break;
+        }
+
+        case CMD_TEST_WATCHDOG:
+            reportEvent(STATUS_PREFIX_INFO, "Triggering watchdog test - system will reset...");
+            while (true) {}
+            break;
+
+        case CMD_REBOOT_BOOTLOADER: {
+#if WATCHDOG_ENABLED
+            WDT->CTRLA.reg = 0;
+            while(WDT->SYNCBUSY.reg);
+#endif
+            reportEvent(STATUS_PREFIX_INFO, "Rebooting to bootloader...");
+            SysMgr.ResetBoard(SysManager::RESET_TO_BOOTLOADER);
+            break;
+        }
+
+        case CMD_DUMP_NVM: {
+            NvmManager &nvmMgr = NvmManager::Instance();
+            char nvm_buf[256];
+            int32_t nvm_values[16];
+            for (int i = 0; i < 16; ++i) {
+                nvm_values[i] = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(i * 4));
+            }
+            for (int i = 0; i < 16; ++i) {
+                int byte_offset = i * 4;
+                int32_t value = nvm_values[i];
+                unsigned char* bytes = (unsigned char*)&value;
+                char hex_str[50];
+                char ascii_str[10];
+                snprintf(hex_str, sizeof(hex_str), "%02X %02X %02X %02X",
+                         bytes[0], bytes[1], bytes[2], bytes[3]);
+                for (int j = 0; j < 4; j++) {
+                    ascii_str[j] = (bytes[j] >= 32 && bytes[j] <= 126) ? bytes[j] : '.';
+                }
+                ascii_str[4] = '\0';
+                snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:%04X:%s:%s", byte_offset, hex_str, ascii_str);
+                sendMessage(nvm_buf);
+            }
+            int32_t magic = nvm_values[7];
+            const char* magic_status = (magic == 0x464C4831) ? "OK" : "INVALID";
+            const char* mode_str = (nvm_values[4] == 0) ? "motor_torque" : "load_cell";
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: Magic=0x%08X(%s) Mode=%s",
+                     (unsigned int)magic, magic_status, mode_str);
+            sendMessage(nvm_buf);
+            const char* pol_str = (nvm_values[3] == 1) ? "inverted" : "normal";
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: Polarity=%s HomeOnBoot=%s",
+                     pol_str, (nvm_values[13] == 1) ? "true" : "false");
+            sendMessage(nvm_buf);
+            float retract_mm = 0.0f;
+            if (nvm_values[14] != 0 && nvm_values[14] != -1) memcpy(&retract_mm, &nvm_values[14], sizeof(float));
+            float threshold_kg = 2.0f;
+            if (nvm_values[15] != 0 && nvm_values[15] != -1) memcpy(&threshold_kg, &nvm_values[15], sizeof(float));
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: Retract=%.2fmm PressThreshold=%.2fkg",
+                     retract_mm, threshold_kg);
+            sendMessage(nvm_buf);
+            reportEvent(STATUS_PREFIX_DONE, "dump_nvm");
+            break;
+        }
+
+        case CMD_RESET_NVM: {
+            NvmManager &nvmMgr = NvmManager::Instance();
+            for (int i = 0; i < 16; ++i) {
+                nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(i * 4), -1);
+            }
+            reportEvent(STATUS_PREFIX_INFO, "All NVM locations reset to erased state. Reboot required.");
+            reportEvent(STATUS_PREFIX_DONE, "reset_nvm");
+            break;
+        }
+
         case CMD_UNKNOWN:
         default:
             m_comms.reportEvent(STATUS_PREFIX_ERROR, "Unknown command sent to Fillhead.");
@@ -380,39 +785,39 @@ void Fillhead::publishTelemetry() {
     char telemetryBuffer[1024];
     const char* mainStateStr;
     switch(m_mainState) {
-        case STATE_STANDBY:  mainStateStr = "STANDBY"; break;
-        case STATE_BUSY:     mainStateStr = "BUSY"; break;
-        case STATE_ERROR:    mainStateStr = "ERROR"; break;
-        case STATE_DISABLED: mainStateStr = "DISABLED"; break;
-        default:             mainStateStr = "UNKNOWN"; break;
+        case STATE_STANDBY:        mainStateStr = "STANDBY"; break;
+        case STATE_BUSY:           mainStateStr = "BUSY"; break;
+        case STATE_ERROR:          mainStateStr = "ERROR"; break;
+        case STATE_DISABLED:       mainStateStr = "DISABLED"; break;
+        case STATE_CLEARING_ERRORS:mainStateStr = "CLEARING_ERRORS"; break;
+        case STATE_RESETTING:      mainStateStr = "RESETTING"; break;
+        case STATE_RECOVERED:      mainStateStr = "RECOVERED"; break;
+        default:                   mainStateStr = "UNKNOWN"; break;
     }
-    (void)mainStateStr;  // reserved for future use in telemetry
 
-    // Assemble the full telemetry string from all components.
     snprintf(telemetryBuffer, sizeof(telemetryBuffer),
         "%s"
-        "fillhead_state:%d,"
-        "%s," // Injector Telemetry
-        "%s," // Injection Valve Telemetry
-        "%s," // Vacuum Valve Telemetry
-        "%s," // Heater Telemetry
-        "%s," // Vacuum Telemetry
-		"inj_st:%s,inj_v_st:%s,vac_v_st:%s,h_st_str:%s,vac_st_str:%s",
+        "fillhead_state:%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "inj_st:%s,inj_v_st:%s,vac_v_st:%s,h_st_str:%s,vac_st_str:%s",
         TELEM_PREFIX,
-        (int)m_mainState,
+        mainStateStr,
         m_injector.getTelemetryString(),
         m_injectorValve.getTelemetryString(),
         m_vacuumValve.getTelemetryString(),
         m_heater.getTelemetryString(),
         m_vacuum.getTelemetryString(),
-		m_injector.getState(),
-		m_injectorValve.getState(),
-		m_vacuumValve.getState(),
-		m_heater.getState(),
-		m_vacuum.getState()
+        m_injector.getState(),
+        m_injectorValve.getState(),
+        m_vacuumValve.getState(),
+        m_heater.getState(),
+        m_vacuum.getState()
     );
 
-    // Enqueue the message for sending.
     m_comms.enqueueTx(telemetryBuffer, m_comms.getGuiIp(), m_comms.getGuiPort());
 }
 
@@ -421,11 +826,52 @@ void Fillhead::publishTelemetry() {
  * @brief Handle recovery from a previous watchdog reset.
  */
 void Fillhead::handleWatchdogRecovery() {
-    if (g_watchdogRecoveryFlag == WATCHDOG_RECOVERY_FLAG) {
-        // Clear the flag so we don't treat subsequent resets as watchdog recoveries.
-        g_watchdogRecoveryFlag = 0;
-        m_mainState = STATE_ERROR;
-        g_errorLog.log(LOG_ERROR, "Recovered from watchdog reset");
+    uint8_t reset_cause = RSTC->RCAUSE.reg;
+    bool is_watchdog_reset = (reset_cause & RSTC_RCAUSE_WDT) != 0;
+
+    if (is_watchdog_reset) {
+        m_injector.disable();
+        m_injectorValve.disable();
+        m_vacuumValve.disable();
+        m_mainState = STATE_RECOVERED;
+
+        char debug_msg[120];
+        snprintf(debug_msg, sizeof(debug_msg),
+                 "Reset cause: 0x%02X (POR=%d BODCORE=%d BODVDD=%d EXT=%d WDT=%d SYST=%d)",
+                 reset_cause,
+                 (reset_cause & RSTC_RCAUSE_POR) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_BODCORE) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_BODVDD) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_EXT) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_WDT) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_SYST) ? 1 : 0);
+        m_comms.reportEvent(STATUS_PREFIX_INFO, debug_msg);
+
+        MOTOR_INJECTOR_A.ClearAlerts();
+        MOTOR_INJECTOR_B.ClearAlerts();
+        MOTOR_VACUUM_VALVE.ClearAlerts();
+        MOTOR_INJECTION_VALVE.ClearAlerts();
+
+        char recoveryMsg[128];
+        snprintf(recoveryMsg, sizeof(recoveryMsg),
+                 "Watchdog timeout in %s - main loop blocked >256ms. Motors disabled. Send RESET to clear.",
+                 resolveBreadcrumb(g_crashTimeBreadcrumb));
+        m_comms.reportEvent(STATUS_PREFIX_RECOVERY, recoveryMsg);
+
+        ConnectorLed.Mode(Connector::OUTPUT_DIGITAL);
+        ConnectorLed.State(true);
+    } else {
+        char debug_msg[120];
+        snprintf(debug_msg, sizeof(debug_msg),
+                 "Reset cause: 0x%02X (POR=%d BODCORE=%d BODVDD=%d EXT=%d WDT=%d SYST=%d)",
+                 reset_cause,
+                 (reset_cause & RSTC_RCAUSE_POR) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_BODCORE) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_BODVDD) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_EXT) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_WDT) ? 1 : 0,
+                 (reset_cause & RSTC_RCAUSE_SYST) ? 1 : 0);
+        m_comms.reportEvent(STATUS_PREFIX_INFO, debug_msg);
     }
 }
 
@@ -457,10 +903,15 @@ void Fillhead::initializeWatchdog() {
  * @brief Feed (reset) the watchdog timer.
  */
 void Fillhead::feedWatchdog() {
-    // Clear watchdog counter.
     WDT->CLEAR.reg = WDT_CLEAR_CLEAR_KEY;
     while (WDT->SYNCBUSY.reg) {
-        // Wait for synchronization
+    }
+}
+
+void Fillhead::clearWatchdogRecovery() {
+    if (m_mainState == STATE_RECOVERED) {
+        reportEvent(STATUS_PREFIX_INFO, "Clearing watchdog recovery state...");
+        ConnectorLed.State(false);
     }
 }
 
@@ -503,7 +954,7 @@ void Fillhead::enable() {
         m_injector.enable();
         m_injectorValve.enable();
         m_vacuumValve.enable();
-        m_comms.reportEvent(STATUS_PREFIX_DONE, "System ENABLE complete. Now in STANDBY state.");
+        m_comms.reportEvent(STATUS_PREFIX_DONE, "enable");
     } else {
         m_comms.reportEvent(STATUS_PREFIX_INFO, "System already enabled.");
     }
@@ -518,7 +969,7 @@ void Fillhead::disable() {
     m_injector.disable();
     m_injectorValve.disable();
     m_vacuumValve.disable();
-    m_comms.reportEvent(STATUS_PREFIX_DONE, "System DISABLE complete.");
+    m_comms.reportEvent(STATUS_PREFIX_DONE, "disable");
 }
 
 /**
@@ -537,25 +988,18 @@ void Fillhead::abort() {
  * @brief Resets any error states, clears motor faults, and returns the system to standby.
  */
 void Fillhead::clearErrors() {
-    reportEvent(STATUS_PREFIX_INFO, "CLEAR_ERRORS received. Resetting all sub-systems...");
-
-    // Abort any active motion first to ensure a clean state.
+    reportEvent(STATUS_PREFIX_INFO, "Reset received. Clearing errors...");
+#if WATCHDOG_ENABLED
+    clearWatchdogRecovery();
+#endif
     m_injector.abortMove();
     m_injectorValve.abort();
     m_vacuumValve.abort();
-
-    // Power cycle the motors to clear hardware faults.
     m_injector.disable();
     m_injectorValve.disable();
     m_vacuumValve.disable();
-    Delay_ms(100);
-    m_injector.enable();
-    m_injectorValve.enable();
-    m_vacuumValve.enable();
-    
-    // The system is now fully reset and ready.
-    standby();
-    reportEvent(STATUS_PREFIX_DONE, "CLEAR_ERRORS complete.");
+    m_resetStartTime = Milliseconds();
+    m_mainState = STATE_RESETTING;
 }
 
 void Fillhead::standby() {
@@ -586,12 +1030,6 @@ void Fillhead::reportEvent(const char* statusType, const char* message) {
 //==================================================================================================
 // --- Program Entry Point ---
 //==================================================================================================
-
-/**
- * @brief Global instance of the entire Fillhead system.
- * @details The C++ runtime ensures the Fillhead constructor is called before main() begins.
- */
-Fillhead fillhead;
 
 /**
  * @brief The main function and entry point of the application.

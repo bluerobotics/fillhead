@@ -1,7 +1,6 @@
 /**
- * @file command_parser.cpp
+ * @file commands.cpp
  * @brief Command parsing implementation for the Fillhead controller.
- * @details Matches src/commands.cpp
  */
 
 #include "commands.h"

@@ -1,3 +1,10 @@
 {
+    "energy_warning": {
+        "description": "Joule energy is outside expected range",
+        "help": "Triggered when energy expended during a move is outside expected limits"
+    },
+    "endpoint_warning": {
+        "description": "Endpoint position is outside expected range",
+        "help": "Triggered when the final position where a move ended is outside expected limits"
+    }
 }
-

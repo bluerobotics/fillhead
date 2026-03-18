@@ -13,7 +13,7 @@
 #pragma once
 
 #include "config.h"
-#include "responses.h"
+#include "events.h"
 #include "comms_controller.h"
 #include "injector_controller.h"
 #include "pinch_valve_controller.h"
@@ -29,9 +29,11 @@
 enum MainState : uint8_t {
 	STATE_STANDBY,       ///< System is idle, initialized, and ready to accept commands.
 	STATE_BUSY,          ///< A non-error operation (e.g., homing, injecting) is in progress.
-	STATE_ERROR,         ///< A fault has occurred, typically a motor fault. Requires `CLEAR_ERRORS` to recover.
+	STATE_ERROR,         ///< A fault has occurred, typically a motor fault. Requires `reset` to recover.
 	STATE_DISABLED,      ///< System is disabled; motors will not move. Requires `ENABLE` to recover.
-	STATE_CLEARING_ERRORS///< A special state to manage the non-blocking error recovery process.
+	STATE_CLEARING_ERRORS,///< A special state to manage the non-blocking error recovery process.
+	STATE_RESETTING,     ///< Non-blocking motor re-enable in progress after reset command.
+	STATE_RECOVERED      ///< Watchdog recovery detected; motors disabled until explicit reset.
 };
 
 /**
@@ -178,10 +180,18 @@ private:
      * @details This must be called regularly from the main loop to prevent watchdog reset.
      */
     void feedWatchdog();
+
+    /**
+     * @brief Clears watchdog recovery state and restores normal operation.
+     */
+    void clearWatchdogRecovery();
 #endif
 
+public:
     // --- Component Ownership ---
     CommsController  m_comms;           ///< Manages all network and serial communication.
+
+private:
     Injector         m_injector;        ///< Manages the dual-motor dispensing system.
     PinchValve       m_injectorValve;   ///< Manages the motorized injection pinch valve.
     PinchValve       m_vacuumValve;     ///< Manages the motorized vacuum pinch valve.
@@ -194,4 +204,10 @@ private:
     // Timers for periodic tasks
     uint32_t m_lastTelemetryTime;       ///< Timestamp of the last telemetry transmission.
     uint32_t m_lastSensorSampleTime;    ///< Timestamp of the last sensor poll.
+
+    // State machine recovery & homing
+    uint32_t m_resetStartTime;
+    uint32_t m_faultGracePeriodEnd;
+    bool m_homingPending;
+    uint32_t m_homingDelayStart;
 };

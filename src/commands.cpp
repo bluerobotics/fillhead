@@ -58,7 +58,6 @@ Command parseCommand(const char* cmdStr) {
     if (strncmp(cmdStr, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
     if (strncmp(cmdStr, CMD_STR_MOVE_TO_CARTRIDGE_HOME, strlen(CMD_STR_MOVE_TO_CARTRIDGE_HOME)) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
     if (strncmp(cmdStr, CMD_STR_CARTRIDGE_HOME, strlen(CMD_STR_CARTRIDGE_HOME)) == 0) return CMD_CARTRIDGE_HOME;
-    if (strncmp(cmdStr, CMD_STR_MACHINE_HOME, strlen(CMD_STR_MACHINE_HOME)) == 0) return CMD_MACHINE_HOME;
     if (strncmp(cmdStr, CMD_STR_PAUSE_INJECTION, strlen(CMD_STR_PAUSE_INJECTION)) == 0) return CMD_PAUSE_INJECTION;
     if (strncmp(cmdStr, CMD_STR_RESUME_INJECTION, strlen(CMD_STR_RESUME_INJECTION)) == 0) return CMD_RESUME_INJECTION;
     if (strncmp(cmdStr, CMD_STR_CANCEL_INJECTION, strlen(CMD_STR_CANCEL_INJECTION)) == 0) return CMD_CANCEL_INJECTION;

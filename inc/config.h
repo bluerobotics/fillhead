@@ -250,6 +250,8 @@
 #define FORCE_SENSOR_MAX_SAFETY_FACTOR      1.2f      ///< Safety factor for maximum force.
 #define FORCE_SENSOR_MAX_LIMIT_KG           (FORCE_SENSOR_MAX_KG * FORCE_SENSOR_MAX_SAFETY_FACTOR) ///< Calculated max limit.
 #define FORCE_SENSOR_TIMEOUT_MS             1000      ///< Time (ms) without readings before disconnected.
+#define CARTRIDGE_HOME_CONTACT_FORCE_KG     3.0f      ///< Load cell force threshold (kg) for detecting piston-to-cartridge contact during homing.
+#define DISPENSE_MAX_SAFE_FORCE_KG          100.0f    ///< Hard safety ceiling (kg) for dispensing force; always active in load_cell mode.
 /** @} */
 
 //==================================================================================================

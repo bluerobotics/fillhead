@@ -360,10 +360,23 @@ void PinchValve::open() {
 
     long target_steps = 0;
     long current_steps = m_motor->PositionRefCommanded();
+    long delta = target_steps - current_steps;
+
+    if (delta == 0) {
+        m_state = VALVE_OPEN;
+        m_opPhase = PHASE_IDLE;
+        m_moveType = MOVE_TYPE_NONE;
+        char doneMsg[128];
+        snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
+                 m_activeCommandStr ? m_activeCommandStr : "open");
+        reportEvent(STATUS_PREFIX_DONE, doneMsg);
+        return;
+    }
+
     int vel_sps = (int)(PINCH_VALVE_OPEN_VEL_MMS * STEPS_PER_MM_PINCH);
     int accel_sps2 = (int)(PINCH_VALVE_OPEN_ACCEL_MMSS * STEPS_PER_MM_PINCH);
 
-    moveSteps(target_steps - current_steps, vel_sps, accel_sps2);
+    moveSteps(delta, vel_sps, accel_sps2);
 }
 
 void PinchValve::close(const char* args) {
@@ -395,6 +408,18 @@ void PinchValve::close(const char* args) {
     m_torqueLimit = torque;
 
     long long_move_steps = (long)(stroke * STEPS_PER_MM_PINCH);
+
+    if (long_move_steps == 0) {
+        m_state = VALVE_CLOSED;
+        m_opPhase = PHASE_IDLE;
+        m_moveType = MOVE_TYPE_NONE;
+        char doneMsg[128];
+        snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
+                 m_activeCommandStr ? m_activeCommandStr : "close");
+        reportEvent(STATUS_PREFIX_DONE, doneMsg);
+        return;
+    }
+
     int vel_sps = (int)(PINCH_VALVE_PINCH_VEL_MMS * STEPS_PER_MM_PINCH);
     int accel_sps2 = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
 
@@ -418,6 +443,17 @@ void PinchValve::jog(const char* args) {
 
     float dist_mm = atof(args);
     long steps = (long)(dist_mm * STEPS_PER_MM_PINCH);
+
+    if (steps == 0) {
+        m_state = VALVE_HALTED;
+        m_opPhase = PHASE_IDLE;
+        char doneMsg[128];
+        snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
+                 m_activeCommandStr ? m_activeCommandStr : "jog");
+        reportEvent(STATUS_PREFIX_DONE, doneMsg);
+        return;
+    }
+
     int vel_sps = (int)(PINCH_JOG_DEFAULT_VEL_MMS * STEPS_PER_MM_PINCH);
     int accel_sps2_val = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
 

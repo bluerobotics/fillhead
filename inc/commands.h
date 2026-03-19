@@ -60,7 +60,6 @@
  */
 #define CMD_STR_INJECT                      "inject "
 #define CMD_STR_SET_CARTRIDGE_ML_PER_MM         "set_cartridge_ml_per_mm "
-#define CMD_STR_MACHINE_HOME                "machine_home"
 #define CMD_STR_CARTRIDGE_HOME              "cartridge_home"
 #define CMD_STR_MOVE_TO_CARTRIDGE_HOME      "move_to_cartridge_home"
 #define CMD_STR_MOVE_TO_CARTRIDGE_RETRACT   "move_to_cartridge_retract "
@@ -148,7 +147,6 @@ typedef enum {
     // Fillhead Injection Commands
     CMD_INJECT,
     CMD_SET_CARTRIDGE_ML_PER_MM,
-    CMD_MACHINE_HOME,
     CMD_CARTRIDGE_HOME,
     CMD_MOVE_TO_CARTRIDGE_HOME,
     CMD_MOVE_TO_CARTRIDGE_RETRACT,

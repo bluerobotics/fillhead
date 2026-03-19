@@ -410,18 +410,37 @@ void Injector::updateState() {
                 }
 
                 case RAPID_APPROACH_MOVING: {
-                    if (!m_axisAStopped && isHomeSensorTriggered(0)) {
-                        stopAxis(0);
-                        m_axisAStopped = true;
-                        m_axisAHomeSensorTriggered = true;
-                        reportEvent(STATUS_PREFIX_INFO, "Homing: M0 sensor triggered (rapid).");
+                    if (m_homingState == HOMING_CARTRIDGE) {
+                        if (m_controller->m_forceSensor.isConnected()) {
+                            float force = m_controller->m_forceSensor.getForce();
+                            if (force >= CARTRIDGE_HOME_CONTACT_FORCE_KG) {
+                                abortMove();
+                                reportEvent(STATUS_PREFIX_INFO, "Homing: Load cell cartridge contact detected (rapid).");
+                                m_axisAStopped = true;
+                                m_axisBStopped = true;
+                            }
+                        } else if (strcmp(getForceMode(), "load_cell") == 0) {
+                            abortMove();
+                            reportEvent(STATUS_PREFIX_ERROR, "Cartridge homing aborted: load cell disconnected during rapid approach.");
+                            m_state = STATE_STANDBY;
+                            m_homingPhase = HOMING_PHASE_IDLE;
+                            break;
+                        }
+                    } else {
+                        if (!m_axisAStopped && isHomeSensorTriggered(0)) {
+                            stopAxis(0);
+                            m_axisAStopped = true;
+                            m_axisAHomeSensorTriggered = true;
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: M0 sensor triggered (rapid).");
+                        }
+                        if (!m_axisBStopped && isHomeSensorTriggered(1)) {
+                            stopAxis(1);
+                            m_axisBStopped = true;
+                            m_axisBHomeSensorTriggered = true;
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: M1 sensor triggered (rapid).");
+                        }
                     }
-                    if (!m_axisBStopped && isHomeSensorTriggered(1)) {
-                        stopAxis(1);
-                        m_axisBStopped = true;
-                        m_axisBHomeSensorTriggered = true;
-                        reportEvent(STATUS_PREFIX_INFO, "Homing: M1 sensor triggered (rapid).");
-                    }
+
                     if (checkTorqueLimit()) {
                         abortMove();
                         reportEvent(STATUS_PREFIX_INFO, "Homing: Torque limit hit during rapid approach (backup safety).");
@@ -430,7 +449,10 @@ void Injector::updateState() {
                     }
 
                     if (m_axisAStopped && m_axisBStopped) {
-                        if (m_axisAHomeSensorTriggered || m_axisBHomeSensorTriggered) {
+                        if (m_homingState == HOMING_CARTRIDGE) {
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: Rapid approach complete (cartridge), starting backoff.");
+                            m_homingPhase = BACKOFF_START;
+                        } else if (m_axisAHomeSensorTriggered || m_axisBHomeSensorTriggered) {
                             reportEvent(STATUS_PREFIX_INFO, "Homing: Rapid approach complete, starting backoff.");
                             m_homingPhase = BACKOFF_START;
                         } else {
@@ -440,7 +462,7 @@ void Injector::updateState() {
                         }
                     } else if (!isMoving()) {
                         abortMove();
-                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motion stopped before sensors triggered.");
+                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motion stopped before contact detected.");
                         m_state = STATE_STANDBY;
                         m_homingPhase = HOMING_PHASE_IDLE;
                     }
@@ -498,18 +520,37 @@ void Injector::updateState() {
                     break;
 
                 case SLOW_APPROACH_MOVING: {
-                    if (!m_axisAStopped && isHomeSensorTriggered(0)) {
-                        stopAxis(0);
-                        m_axisAStopped = true;
-                        m_axisAHomeSensorTriggered = true;
-                        reportEvent(STATUS_PREFIX_INFO, "Homing: M0 sensor triggered (slow) - precise position found.");
+                    if (m_homingState == HOMING_CARTRIDGE) {
+                        if (m_controller->m_forceSensor.isConnected()) {
+                            float force = m_controller->m_forceSensor.getForce();
+                            if (force >= CARTRIDGE_HOME_CONTACT_FORCE_KG) {
+                                abortMove();
+                                reportEvent(STATUS_PREFIX_INFO, "Homing: Load cell cartridge contact detected (slow) - precise position found.");
+                                m_axisAStopped = true;
+                                m_axisBStopped = true;
+                            }
+                        } else if (strcmp(getForceMode(), "load_cell") == 0) {
+                            abortMove();
+                            reportEvent(STATUS_PREFIX_ERROR, "Cartridge homing aborted: load cell disconnected during slow approach.");
+                            m_state = STATE_STANDBY;
+                            m_homingPhase = HOMING_PHASE_IDLE;
+                            break;
+                        }
+                    } else {
+                        if (!m_axisAStopped && isHomeSensorTriggered(0)) {
+                            stopAxis(0);
+                            m_axisAStopped = true;
+                            m_axisAHomeSensorTriggered = true;
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: M0 sensor triggered (slow) - precise position found.");
+                        }
+                        if (!m_axisBStopped && isHomeSensorTriggered(1)) {
+                            stopAxis(1);
+                            m_axisBStopped = true;
+                            m_axisBHomeSensorTriggered = true;
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: M1 sensor triggered (slow) - precise position found.");
+                        }
                     }
-                    if (!m_axisBStopped && isHomeSensorTriggered(1)) {
-                        stopAxis(1);
-                        m_axisBStopped = true;
-                        m_axisBHomeSensorTriggered = true;
-                        reportEvent(STATUS_PREFIX_INFO, "Homing: M1 sensor triggered (slow) - precise position found.");
-                    }
+
                     if (checkTorqueLimit()) {
                         abortMove();
                         reportEvent(STATUS_PREFIX_INFO, "Homing: Torque limit hit during slow approach (backup safety).");
@@ -518,7 +559,10 @@ void Injector::updateState() {
                     }
 
                     if (m_axisAStopped && m_axisBStopped) {
-                        if (m_axisAHomeSensorTriggered && m_axisBHomeSensorTriggered) {
+                        if (m_homingState == HOMING_CARTRIDGE) {
+                            reportEvent(STATUS_PREFIX_INFO, "Homing: Cartridge contact confirmed (slow). Moving to offset.");
+                            m_homingPhase = FINAL_BACKOFF_START;
+                        } else if (m_axisAHomeSensorTriggered && m_axisBHomeSensorTriggered) {
                             reportEvent(STATUS_PREFIX_INFO, "Homing: Both sensors triggered, gantry squared. Moving to offset.");
                             m_homingPhase = FINAL_BACKOFF_START;
                         } else if (m_axisAHomeSensorTriggered || m_axisBHomeSensorTriggered) {
@@ -535,7 +579,7 @@ void Injector::updateState() {
                         }
                     } else if (!isMoving()) {
                         abortMove();
-                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motion stopped before sensors triggered (slow).");
+                        reportEvent(STATUS_PREFIX_ERROR, "Homing failed: Motion stopped before contact detected (slow).");
                         m_state = STATE_STANDBY;
                         m_homingPhase = HOMING_PHASE_IDLE;
                     }
@@ -567,7 +611,7 @@ void Injector::updateState() {
                 // --- SET ZERO ---
                 case SET_ZERO: {
                     const char* commandStr = (m_homingState == HOMING_MACHINE)
-                                              ? CMD_STR_MACHINE_HOME : CMD_STR_CARTRIDGE_HOME;
+                                              ? CMD_STR_HOME : CMD_STR_CARTRIDGE_HOME;
 
                     if (m_homingState == HOMING_MACHINE) {
                         m_machineHomeReferenceSteps = m_motorA->PositionRefCommanded();
@@ -630,27 +674,41 @@ void Injector::updateState() {
                 return;
             }
 
-            if (m_feedState == FEED_INJECT_ACTIVE && m_active_op_feed_force_limit_kg > 0.1f) {
-                const char* mode = getForceMode();
-                if (strcmp(mode, "load_cell") == 0) {
-                    const char* errorMsg = nullptr;
-                    if (checkForceSensorStatus(&errorMsg)) {
-                        abortMove();
-                        char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
-                        snprintf(fullMsg, sizeof(fullMsg), "Inject stopped: %s", errorMsg);
-                        reportEvent(STATUS_PREFIX_ERROR, fullMsg);
-                        finalizeAndResetActiveDispenseOperation(false);
-                        m_state = STATE_STANDBY;
-                        return;
-                    }
-                    float current_force = m_controller->m_forceSensor.getForce();
-                    if (current_force >= m_active_op_feed_force_limit_kg) {
-                        char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
-                        snprintf(limit_desc, sizeof(limit_desc), "Inject force limit (%.1f kg, actual: %.1f kg)",
-                                 m_active_op_feed_force_limit_kg, current_force);
-                        handleFeedLimitReached(limit_desc, current_force);
-                        return;
-                    }
+            if ((m_feedState == FEED_INJECT_ACTIVE || m_feedState == FEED_INJECT_STARTING)
+                && strcmp(getForceMode(), "load_cell") == 0) {
+                const char* safetyErrorMsg = nullptr;
+                if (checkForceSensorStatus(&safetyErrorMsg)) {
+                    abortMove();
+                    char fullMsg[STATUS_MESSAGE_BUFFER_SIZE];
+                    snprintf(fullMsg, sizeof(fullMsg), "Dispense safety: %s", safetyErrorMsg);
+                    reportEvent(STATUS_PREFIX_ERROR, fullMsg);
+                    finalizeAndResetActiveDispenseOperation(false);
+                    m_state = STATE_STANDBY;
+                    return;
+                }
+
+                float current_force = m_controller->m_forceSensor.getForce();
+
+                if (current_force >= DISPENSE_MAX_SAFE_FORCE_KG) {
+                    abortMove();
+                    char msg[STATUS_MESSAGE_BUFFER_SIZE];
+                    snprintf(msg, sizeof(msg),
+                             "SAFETY: Dispense force limit exceeded (%.1f kg >= %.1f kg max).",
+                             current_force, (float)DISPENSE_MAX_SAFE_FORCE_KG);
+                    reportEvent(STATUS_PREFIX_ERROR, msg);
+                    finalizeAndResetActiveDispenseOperation(false);
+                    m_state = STATE_STANDBY;
+                    return;
+                }
+
+                if (m_feedState == FEED_INJECT_ACTIVE
+                    && m_active_op_feed_force_limit_kg > 0.1f
+                    && current_force >= m_active_op_feed_force_limit_kg) {
+                    char limit_desc[STATUS_MESSAGE_BUFFER_SIZE];
+                    snprintf(limit_desc, sizeof(limit_desc), "Inject force limit (%.1f kg, actual: %.1f kg)",
+                             m_active_op_feed_force_limit_kg, current_force);
+                    handleFeedLimitReached(limit_desc, current_force);
+                    return;
                 }
             }
 
@@ -838,17 +896,16 @@ void Injector::handleCommand(Command cmd, const char* args) {
 
     // Block new motion commands while busy
     if (m_state != STATE_STANDBY &&
-        (cmd == CMD_MACHINE_HOME || cmd == CMD_CARTRIDGE_HOME ||
+        (cmd == CMD_HOME || cmd == CMD_CARTRIDGE_HOME ||
          cmd == CMD_INJECT ||
-         cmd == CMD_HOME || cmd == CMD_MOVE_ABS || cmd == CMD_MOVE_INC || cmd == CMD_RETRACT ||
+         cmd == CMD_MOVE_ABS || cmd == CMD_MOVE_INC || cmd == CMD_RETRACT ||
          cmd == CMD_MOVE_TO_CARTRIDGE_HOME || cmd == CMD_MOVE_TO_CARTRIDGE_RETRACT)) {
         reportEvent(STATUS_PREFIX_ERROR, "Injector command ignored: Another operation is in progress.");
         return;
     }
 
     switch (cmd) {
-        // --- Existing Fillhead Injection Commands ---
-        case CMD_MACHINE_HOME:              machineHome(); break;
+        // --- Fillhead Injection Commands ---
         case CMD_CARTRIDGE_HOME:            cartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_HOME:    moveToCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: moveToCartridgeRetract(args); break;
@@ -862,7 +919,7 @@ void Injector::handleCommand(Command cmd, const char* args) {
         case CMD_RESUME_INJECTION:          resumeOperation(); break;
         case CMD_CANCEL_INJECTION:          cancelOperation(); break;
 
-        // --- Pressboi General Motion Commands ---
+        // --- General Motion Commands ---
         case CMD_HOME:                      home(); break;
         case CMD_MOVE_ABS:                  moveAbsolute(args); break;
         case CMD_MOVE_INC:                  moveIncremental(args); break;
@@ -953,10 +1010,6 @@ void Injector::reset() {
 //==================================================================================================
 
 void Injector::home() {
-    machineHome();
-}
-
-void Injector::machineHome() {
     if (!m_homeSensorsInitialized) {
         setupHomeSensors();
     }
@@ -1027,12 +1080,21 @@ void Injector::machineHome() {
     m_forceLimitTriggered = false;
     m_jouleIntegrationActive = false;
 
-    reportEvent(STATUS_PREFIX_START, "MACHINE_HOME initiated (gantry squaring mode).");
+    reportEvent(STATUS_PREFIX_START, "HOME initiated (gantry squaring mode).");
 }
 
 void Injector::cartridgeHome() {
     if (!m_homeSensorsInitialized) {
         setupHomeSensors();
+    }
+
+    // Cartridge homing uses the load cell for contact detection whenever the sensor is
+    // connected, regardless of the force_mode setting.  In motor_torque mode with no
+    // sensor, the torque limit serves as the sole detection mechanism.  In load_cell mode
+    // the sensor MUST be present at startup and is monitored for mid-homing disconnects.
+    if (strcmp(getForceMode(), "load_cell") == 0 && !m_controller->m_forceSensor.isConnected()) {
+        reportEvent(STATUS_PREFIX_ERROR, "Cartridge home aborted: load cell mode active but sensor not connected.");
+        return;
     }
 
     m_cumulative_dispensed_ml = 0.0f;

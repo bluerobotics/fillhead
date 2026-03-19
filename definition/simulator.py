@@ -33,7 +33,8 @@ def handle_command(device_sim, command, args, gui_address):
     if cmd_lower == "home":
         device_sim.set_state('MAIN_STATE', 'HOMING')
         device_sim.command_queue.append(
-            (simulate_press_homing, (device_sim, 2.0, gui_address, command)))
+            (simulate_injector_homing,
+             (device_sim, 'machine', 2.0, gui_address, command)))
         return True
 
     elif cmd_lower == "move_abs":
@@ -111,13 +112,6 @@ def handle_command(device_sim, command, args, gui_address):
         ratio = float(args[0]) if args else 5.2732
         device_sim.state['cartridge_ml_per_mm'] = ratio
         return False
-
-    elif cmd_lower == "machine_home":
-        device_sim.set_state('MAIN_STATE', 'HOMING')
-        device_sim.command_queue.append(
-            (simulate_injector_homing,
-             (device_sim, 'machine', 2.0, gui_address, command)))
-        return True
 
     elif cmd_lower == "cartridge_home":
         device_sim.set_state('MAIN_STATE', 'HOMING')
@@ -356,26 +350,6 @@ def handle_command(device_sim, command, args, gui_address):
 # Simulation helpers
 # ═══════════════════════════════════════════════════════════════════════
 
-def simulate_press_homing(device_sim, duration, gui_address, command):
-    """Simulates press axis homing (sets position to zero)."""
-    time.sleep(duration)
-    if device_sim._stop_event.is_set():
-        return
-
-    device_sim.state['current_pos'] = 0.0
-    device_sim.state['homed'] = 1
-    device_sim.state['force_load_cell'] = 0.0
-    device_sim.state['force_motor_torque'] = 0.0
-    device_sim.state['force_source'] = "load_cell"
-    device_sim.state['joules'] = 0.0
-    device_sim.state['home_sensor_m0'] = 1
-    device_sim.state['home_sensor_m1'] = 1
-    device_sim.set_state('MAIN_STATE', 'STANDBY')
-    device_sim.sock.sendto(
-        f"FILLHEAD_DONE: {command}".encode(), gui_address)
-    print(f"[fillhead] Press homing complete")
-
-
 def simulate_press_move(device_sim, target, duration, gui_address, command):
     """Simulates press move with force and joule accumulation."""
     start_time = time.time()
@@ -430,7 +404,11 @@ def simulate_press_move(device_sim, target, duration, gui_address, command):
 
 def simulate_injector_homing(device_sim, component, duration,
                              gui_address, command):
-    """Simulates injector motor homing (machine or cartridge)."""
+    """Simulates injector motor homing (machine or cartridge).
+
+    Machine homing uses inductive sensors. Cartridge homing uses load cell
+    contact detection (primary) with torque limit as backup.
+    """
     time.sleep(duration)
     if device_sim._stop_event.is_set():
         return
@@ -438,7 +416,17 @@ def simulate_injector_homing(device_sim, component, duration,
     if component == 'machine':
         device_sim.state['inj_h_mach'] = 1
         device_sim.state['inj_mach_mm'] = 0.0
+        device_sim.state['current_pos'] = 0.0
+        device_sim.state['homed'] = 1
+        device_sim.state['force_load_cell'] = 0.0
+        device_sim.state['force_motor_torque'] = 0.0
+        device_sim.state['joules'] = 0.0
+        device_sim.state['home_sensor_m0'] = 1
+        device_sim.state['home_sensor_m1'] = 1
     elif component == 'cartridge':
+        force_mode = device_sim.state.get('force_mode', 'motor_torque')
+        if force_mode == 'load_cell':
+            device_sim.state['force_load_cell'] = 0.0
         device_sim.state['inj_h_cart'] = 1
         device_sim.state['inj_cart_mm'] = 0.0
 

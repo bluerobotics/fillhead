@@ -388,7 +388,7 @@ private:
     // ── Private Command Handlers ─────────────────────────────────────────
     /** @name Private Command Handlers @{ */
 
-    void machineHome();
+    void home();
     void cartridgeHome();
     void moveToCartridgeHome();
     void moveToCartridgeRetract(const char* args);
@@ -399,7 +399,6 @@ private:
     void cancelOperation();
     void setTorqueOffset(const char* args);
 
-    void home();
     void moveAbsolute(const char* args);
     void moveIncremental(const char* args);
     void setRetract(const char* args);

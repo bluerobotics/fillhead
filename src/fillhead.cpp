@@ -594,7 +594,6 @@ void Fillhead::dispatchCommand(const Message& msg) {
             break;
 
         // --- Fillhead Injection Commands (Delegated to Injector) ---
-        case CMD_MACHINE_HOME:
         case CMD_CARTRIDGE_HOME:
         case CMD_MOVE_TO_CARTRIDGE_HOME:
         case CMD_MOVE_TO_CARTRIDGE_RETRACT:

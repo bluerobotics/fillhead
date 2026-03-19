@@ -235,17 +235,10 @@
         ],
         "returns": ["done", "error"]
     },
-    "machine_home": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Home the main machine axis and move to working position.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
     "cartridge_home": {
         "device": "fillhead",
         "target": "device",
-        "description": "Home the injector against the cartridge and move to working position.",
+        "description": "Home the injector against the cartridge using load cell contact detection (primary) or torque limit (backup), then move to working position.",
         "params": [],
         "returns": ["done", "error"]
     },

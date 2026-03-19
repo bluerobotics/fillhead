@@ -28,18 +28,18 @@ isProject: false
 
 # Fillhead First Power-On Commissioning Plan
 
-All commands below are sent via the BR Equipment Control App (UDP) or USB serial terminal. Telemetry is visible in the app at 100 ms intervals.
+All commands below are sent via the BR Equipment Control App using Ethernet or USB to connect to fillhead. Telemetry is visible in the app at 100 ms intervals.
 
 ---
 
 ## Phase 1 -- Pre-Power Checks (no power)
 
 - Verify all motor connectors are seated (M0/M1 injectors, M2 injection valve, M3 vacuum valve).
-- Verify sensor wiring: thermocouple (A12), vacuum transducer (A11), injection valve hall sensor (DI8), injector home sensors (DI7/M0, DI6/M1), vacuum valve hall sensor (A9).
+- Verify sensor wiring: thermocouple (A12), vacuum transducer (A11), injection valve hall sensor (DI8), vacuum valve hall sensor (A9), injector home sensors (DI7/M0, DI6/M1), .
 - Verify relay wiring: heater (IO1), vacuum pump (IO0), vacuum solenoid (IO5).
 - Verify light curtain wiring (IO4) -- confirm it is connected and unobstructed.
 - Verify Ethernet cable or USB cable is connected to host PC.
-- Verify load cell Rugeduino (Arduino Uno) is connected to COM-0 (TTL serial).
+- Verify load cell adapter board is connected to COM-0 (TTL serial) and code has been loaded to the arduino.
 - Ensure no cartridge is loaded and nothing is in the travel path of the injectors or valves.
 
 ---
@@ -48,7 +48,7 @@ All commands below are sent via the BR Equipment Control App (UDP) or USB serial
 
 1. Apply power to the ClearCore.
 2. Open the BR Equipment Control App and confirm `discover_device` succeeds -- the app should find the fillhead on port 8888.
-3. Check the telemetry stream is active -- verify `fillhead_state` reports. On first boot, expect `STATE_STANDBY` (or `STATE_RECOVERED` if a watchdog reset occurred).
+3. Check "Enable telemetry" in the BR Equipment Control App and confirm the telemetry stream is active -- verify `fillhead_state` reports. On first boot, expect `STATE_STANDBY` (or `STATE_RECOVERED` if a watchdog reset occurred).
 4. Run `dump_nvm` to inspect current NVM contents. If this is a fresh board, run `reset_nvm` to load factory defaults.
 5. Send `enable`. On a normal first boot the system is already in `STATE_STANDBY` and will respond "System already enabled." If the system is in `STATE_DISABLED`, it will transition to `STATE_STANDBY` and enable all motors.
 

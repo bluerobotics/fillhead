@@ -1099,6 +1099,7 @@ void Fillhead::handleWatchdogRecovery() {
     bool is_watchdog_reset = (reset_cause & RSTC_RCAUSE_WDT) != 0;
 
     if (is_watchdog_reset) {
+        PIN_HEATER_RELAY.State(false);
         m_injector.disable();
         m_injectorValve.disable();
         m_vacuumValve.disable();
@@ -1194,11 +1195,12 @@ extern "C" void WDT_Handler(void) {
     // Clear the early warning interrupt flag.
     WDT->INTFLAG.reg = WDT_INTFLAG_EW;
 
-    // Immediately disable all motors to prevent damage.
+    // Immediately disable all motors and heater relay to prevent damage.
     MOTOR_INJECTOR_A.EnableRequest(false);
     MOTOR_INJECTOR_B.EnableRequest(false);
     MOTOR_VACUUM_VALVE.EnableRequest(false);
     MOTOR_INJECTION_VALVE.EnableRequest(false);
+    PIN_HEATER_RELAY.State(false);
 
     // Indicate watchdog trigger on the ClearCore status LED.
     ConnectorLed.Mode(Connector::OUTPUT_DIGITAL);
@@ -1236,7 +1238,8 @@ void Fillhead::enable() {
  * @brief Disables all motors and stops all operations.
  */
 void Fillhead::disable() {
-    abort(); // Safest to abort any motion first.
+    abort();
+    m_heater.emergencyOff();
     m_mainState = STATE_DISABLED;
     m_injector.disable();
     m_injectorValve.disable();
@@ -1248,12 +1251,12 @@ void Fillhead::disable() {
  * @brief Halts all motion and resets the system state to standby.
  */
 void Fillhead::abort() {
-    reportEvent(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
-    m_injector.abortMove();
-    m_injectorValve.abort();
-    m_vacuumValve.abort();
-    standby(); // This now resets all sub-controller states.
-    reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
+	reportEvent(STATUS_PREFIX_INFO, "ABORT received. Stopping all motion.");
+	m_injector.abortMove();
+	m_injectorValve.abort();
+	m_vacuumValve.abort();
+	standby();
+	reportEvent(STATUS_PREFIX_DONE, "ABORT complete.");
 }
 
 /**

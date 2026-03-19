@@ -192,6 +192,23 @@
 /** @} */
 
 /**
+ * @name Heater Thermal Protection
+ * @details Multi-layer thermal protection modeled after Marlin firmware.
+ * @{
+ */
+#define HEATER_MAXTEMP_C                130.0f    ///< Absolute max temperature (C) -- immediate shutoff if exceeded.
+#define HEATER_MAX_SETPOINT_C           120.0f    ///< Maximum user-settable setpoint (C). Must be below HEATER_MAXTEMP_C.
+#define HEATER_MINTEMP_C                -10.0f    ///< Below this (C) = sensor fault (open/short thermocouple).
+#define HEATER_ADC_MIN_VALID            50        ///< ADC counts below this indicate an open thermocouple.
+#define HEATER_ADC_MAX_VALID            4045      ///< ADC counts above this indicate a shorted thermocouple.
+#define HEATER_ADC_FAULT_THRESHOLD      5         ///< Consecutive out-of-range ADC readings required before declaring FAULT_SENSOR.
+#define THERMAL_RUNAWAY_PERIOD_S        30        ///< Seconds temperature can be outside hysteresis band before runaway fault.
+#define THERMAL_RUNAWAY_HYSTERESIS_C    10.0f     ///< Allowed deviation (C) below setpoint while in stable state.
+#define HEATING_WATCH_PERIOD_S          60        ///< Check window (s): must see temperature increase within this time during heatup.
+#define HEATING_WATCH_INCREASE_C        5.0f      ///< Minimum temperature rise (C) required within the watch window.
+/** @} */
+
+/**
  * @name Vacuum System Defaults
  * @{
  */

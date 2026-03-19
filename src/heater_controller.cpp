@@ -32,6 +32,14 @@ HeaterController::HeaterController(Fillhead* controller) {
 
 	m_fanThresholdCelsius = DEFAULT_COOLING_FAN_THRESHOLD_C;
 	m_fanActive = false;
+
+	m_faultCode = FAULT_NONE;
+	m_trState = TR_INACTIVE;
+	m_trTimerStart = 0;
+	m_trTarget = 0.0f;
+	m_watchTimerStart = 0;
+	m_watchStartTemp = 0.0f;
+	m_adcFaultCount = 0;
 }
 
 void HeaterController::setup() {
@@ -77,13 +85,18 @@ void HeaterController::handleCommand(Command cmd, const char* args) {
 }
 
 void HeaterController::heaterOn(const char* args) {
+	if (m_heaterState == HEATER_FAULT) {
+		reportEvent(STATUS_PREFIX_ERROR, "HEATER_ON rejected: heater is in FAULT state. Send heater_off first to clear.");
+		return;
+	}
+
 	if (args != NULL && args[0] != '\0') {
 		float newSetpoint = atof(args);
-		if (newSetpoint > 20.0f && newSetpoint < 200.0f) {
+		if (newSetpoint > 20.0f && newSetpoint <= HEATER_MAX_SETPOINT_C) {
 			m_pid_setpoint = newSetpoint;
 		} else {
 			char response[STATUS_MESSAGE_BUFFER_SIZE];
-			snprintf(response, sizeof(response), "Invalid setpoint %.1f C. Must be between 20 and 200 C. Heater NOT activated.", newSetpoint);
+			snprintf(response, sizeof(response), "Invalid setpoint %.1f C. Must be between 20 and %.0f C. Heater NOT activated.", newSetpoint, (double)HEATER_MAX_SETPOINT_C);
 			reportEvent(STATUS_PREFIX_ERROR, response);
 			return;
 		}
@@ -92,6 +105,13 @@ void HeaterController::heaterOn(const char* args) {
 	if (m_heaterState != HEATER_PID_ACTIVE) {
 		resetPID();
 		m_heaterState = HEATER_PID_ACTIVE;
+
+		m_trState = TR_FIRST_HEATING;
+		m_trTarget = m_pid_setpoint;
+		m_trTimerStart = 0;
+		m_watchStartTemp = m_temperatureCelsius;
+		m_watchTimerStart = Milliseconds();
+
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
 		snprintf(response, sizeof(response), "HEATER_ON: PID control activated. Setpoint=%.1f C.", m_pid_setpoint);
 		reportEvent(STATUS_PREFIX_DONE, response);
@@ -105,55 +125,96 @@ void HeaterController::heaterOn(const char* args) {
 }
 
 void HeaterController::heaterOff() {
-	if (m_heaterState != HEATER_OFF) {
-		m_heaterState = HEATER_OFF;
-		PIN_HEATER_RELAY.State(false); // Ensure relay is off
+	if (m_heaterState == HEATER_FAULT) {
+		PIN_HEATER_RELAY.State(false);
 		m_pid_output = 0.0f;
+		m_heaterState = HEATER_OFF;
+		m_faultCode = FAULT_NONE;
+		m_trState = TR_INACTIVE;
+		reportEvent(STATUS_PREFIX_DONE, "HEATER_OFF: Fault cleared. Heater can be re-enabled.");
+	} else if (m_heaterState != HEATER_OFF) {
+		m_heaterState = HEATER_OFF;
+		PIN_HEATER_RELAY.State(false);
+		m_pid_output = 0.0f;
+		m_trState = TR_INACTIVE;
 		reportEvent(STATUS_PREFIX_DONE, "HEATER_OFF: PID control deactivated.");
-		} else {
+	} else {
 		reportEvent(STATUS_PREFIX_INFO, "HEATER_OFF ignored: Heater was already off.");
 	}
 }
 
 void HeaterController::setGains(const char* args) {
-	if (sscanf(args, "%f %f %f", &m_pid_kp, &m_pid_ki, &m_pid_kd) == 3) {
+	float kp, ki, kd;
+	if (sscanf(args, "%f %f %f", &kp, &ki, &kd) == 3) {
+		if (kp < 0.0f || kp > 500.0f || ki < 0.0f || ki > 100.0f || kd < 0.0f || kd > 500.0f) {
+			reportEvent(STATUS_PREFIX_ERROR, "PID gains out of safe range. Kp: 0-500, Ki: 0-100, Kd: 0-500.");
+			return;
+		}
+		m_pid_kp = kp;
+		m_pid_ki = ki;
+		m_pid_kd = kd;
 		char response[128];
 		snprintf(response, sizeof(response), "set_heater_gains complete. P=%.2f, I=%.2f, D=%.2f", m_pid_kp, m_pid_ki, m_pid_kd);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		resetPID();
-		} else {
+	} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid format for SET_HEATER_GAINS. Expected: P I D.");
 	}
 }
 
 void HeaterController::setSetpoint(const char* args) {
 	float newSetpoint = atof(args);
-	if (newSetpoint > 20.0f && newSetpoint < 200.0f) {
+	if (newSetpoint > 20.0f && newSetpoint <= HEATER_MAX_SETPOINT_C) {
 		m_pid_setpoint = newSetpoint;
 		char response[128];
 		snprintf(response, sizeof(response), "set_heater_setpoint complete. Setpoint=%.1f C", m_pid_setpoint);
 		reportEvent(STATUS_PREFIX_DONE, response);
-		} else {
-		reportEvent(STATUS_PREFIX_ERROR, "Invalid setpoint. Must be between 20 and 200 C.");
+	} else {
+		char response[STATUS_MESSAGE_BUFFER_SIZE];
+		snprintf(response, sizeof(response), "Invalid setpoint. Must be between 20 and %.0f C.", (double)HEATER_MAX_SETPOINT_C);
+		reportEvent(STATUS_PREFIX_ERROR, response);
 	}
 }
 
 void HeaterController::updateTemperature() {
 	uint16_t adc_val = PIN_THERMOCOUPLE.State();
+
+	if (adc_val < HEATER_ADC_MIN_VALID || adc_val > HEATER_ADC_MAX_VALID) {
+		m_adcFaultCount++;
+		if (m_adcFaultCount >= HEATER_ADC_FAULT_THRESHOLD) {
+			triggerFault(FAULT_SENSOR);
+		}
+		return;
+	}
+	m_adcFaultCount = 0;
+
 	float voltage_from_sensor = (float)adc_val * (TC_V_REF / 4095.0f);
 	float raw_celsius = (voltage_from_sensor - TC_V_OFFSET) * TC_GAIN;
 
 	if (m_firstTempReading) {
 		m_smoothedTemperatureCelsius = raw_celsius;
 		m_firstTempReading = false;
-		} else {
+	} else {
 		m_smoothedTemperatureCelsius = (EWMA_ALPHA_SENSORS * raw_celsius) + ((1.0f - EWMA_ALPHA_SENSORS) * m_smoothedTemperatureCelsius);
 	}
 	m_temperatureCelsius = m_smoothedTemperatureCelsius;
+
+	if (m_temperatureCelsius > HEATER_MAXTEMP_C) {
+		triggerFault(FAULT_MAXTEMP);
+	} else if (m_temperatureCelsius < HEATER_MINTEMP_C) {
+		triggerFault(FAULT_MINTEMP);
+	}
 }
 
 void HeaterController::updateState() {
 	updateCoolingFan();
+
+	// If faulted, unconditionally hold relay off and skip all PID logic.
+	if (m_heaterState == HEATER_FAULT) {
+		PIN_HEATER_RELAY.State(false);
+		m_pid_output = 0.0f;
+		return;
+	}
 
 	if (m_heaterState != HEATER_PID_ACTIVE) {
 		// If PID is not active, ensure the output is zero and the relay is off.
@@ -171,6 +232,9 @@ void HeaterController::updateState() {
 	if (time_change_ms < PID_UPDATE_INTERVAL_MS) {
 		return;
 	}
+
+	checkThermalProtection();
+	if (m_heaterState != HEATER_PID_ACTIVE) return;
 
 	float error = m_pid_setpoint - m_temperatureCelsius;
 	m_pid_integral += error * (time_change_ms / 1000.0f);
@@ -195,6 +259,14 @@ void HeaterController::updateState() {
 }
 
 void HeaterController::updateCoolingFan() {
+	if (m_heaterState == HEATER_FAULT) {
+		if (!m_fanActive) {
+			m_fanActive = true;
+			PIN_COOLING_FAN.State(true);
+		}
+		return;
+	}
+
 	bool shouldRun;
 	if (m_fanActive) {
 		shouldRun = m_temperatureCelsius >= (m_fanThresholdCelsius - COOLING_FAN_HYSTERESIS_C);
@@ -221,6 +293,90 @@ void HeaterController::setFanThreshold(const char* args) {
 	}
 }
 
+void HeaterController::emergencyOff() {
+	PIN_HEATER_RELAY.State(false);
+	m_pid_output = 0.0f;
+	m_trState = TR_INACTIVE;
+	resetPID();
+	if (m_heaterState != HEATER_FAULT) {
+		m_heaterState = HEATER_OFF;
+	}
+}
+
+void HeaterController::triggerFault(HeaterFault fault) {
+	if (m_heaterState == HEATER_FAULT) return;
+
+	PIN_HEATER_RELAY.State(false);
+	m_pid_output = 0.0f;
+	m_heaterState = HEATER_FAULT;
+	m_faultCode = fault;
+	m_trState = TR_INACTIVE;
+
+	m_fanActive = true;
+	PIN_COOLING_FAN.State(true);
+
+	const char* reason;
+	switch (fault) {
+		case FAULT_MAXTEMP:        reason = "MAXTEMP exceeded"; break;
+		case FAULT_MINTEMP:        reason = "MINTEMP -- possible sensor fault"; break;
+		case FAULT_SENSOR:         reason = "Thermocouple ADC out of range -- open/short"; break;
+		case FAULT_RUNAWAY:        reason = "Thermal runaway -- temp outside band too long"; break;
+		case FAULT_HEATING_FAILED: reason = "Heating failed -- no temp rise during heatup"; break;
+		default:                   reason = "Unknown fault"; break;
+	}
+
+	char response[STATUS_MESSAGE_BUFFER_SIZE];
+	snprintf(response, sizeof(response),
+		"THERMAL FAULT: %s (temp=%.1f C, setpoint=%.1f C). Heater disabled. Send heater_off to clear.",
+		reason, m_temperatureCelsius, m_pid_setpoint);
+	reportEvent(STATUS_PREFIX_ERROR, response);
+}
+
+void HeaterController::checkThermalProtection() {
+	uint32_t now = Milliseconds();
+
+	if (m_trTarget != m_pid_setpoint) {
+		m_trTarget = m_pid_setpoint;
+		m_trState = TR_FIRST_HEATING;
+		m_watchStartTemp = m_temperatureCelsius;
+		m_watchTimerStart = now;
+		m_trTimerStart = now;
+	}
+
+	switch (m_trState) {
+		case TR_INACTIVE:
+			break;
+
+		case TR_FIRST_HEATING:
+			if (m_temperatureCelsius >= m_pid_setpoint - THERMAL_RUNAWAY_HYSTERESIS_C) {
+				m_trState = TR_STABLE;
+				m_trTimerStart = now;
+				break;
+			}
+
+			if ((now - m_watchTimerStart) >= (uint32_t)HEATING_WATCH_PERIOD_S * 1000) {
+				if (m_temperatureCelsius - m_watchStartTemp < HEATING_WATCH_INCREASE_C) {
+					triggerFault(FAULT_HEATING_FAILED);
+					return;
+				}
+				m_watchStartTemp = m_temperatureCelsius;
+				m_watchTimerStart = now;
+			}
+			break;
+
+		case TR_STABLE: {
+			float drift = m_temperatureCelsius - m_pid_setpoint;
+			if (drift >= -THERMAL_RUNAWAY_HYSTERESIS_C && drift <= THERMAL_RUNAWAY_HYSTERESIS_C) {
+				m_trTimerStart = now;
+			} else if ((now - m_trTimerStart) >= (uint32_t)THERMAL_RUNAWAY_PERIOD_S * 1000) {
+				triggerFault(FAULT_RUNAWAY);
+				return;
+			}
+			break;
+		}
+	}
+}
+
 void HeaterController::resetPID() {
 	m_pid_integral = 0.0f;
 	m_pid_last_error = 0.0f;
@@ -236,9 +392,9 @@ void HeaterController::reportEvent(const char* statusType, const char* message) 
 
 const char* HeaterController::getTelemetryString() {
 	snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
-	"h_st:%d,h_sp:%.1f,h_pv:%.1f,h_op:%.1f,fan:%d,fan_thr:%.1f",
+	"h_st:%d,h_sp:%.1f,h_pv:%.1f,h_op:%.1f,fan:%d,fan_thr:%.1f,h_ft:%d",
 	(int)m_heaterState, m_pid_setpoint, m_temperatureCelsius, m_pid_output,
-	(int)m_fanActive, m_fanThresholdCelsius);
+	(int)m_fanActive, m_fanThresholdCelsius, (int)m_faultCode);
 	return m_telemetryBuffer;
 }
 
@@ -246,6 +402,7 @@ const char* HeaterController::getState() const {
 	switch (m_heaterState) {
 		case HEATER_OFF:        return "Off";
 		case HEATER_PID_ACTIVE: return "Active";
+		case HEATER_FAULT:      return "Fault";
 		default:                return "Unknown";
 	}
 }

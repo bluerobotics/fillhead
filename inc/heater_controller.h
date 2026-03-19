@@ -23,7 +23,31 @@ class Fillhead; // Forward declaration
  */
 enum HeaterState : uint8_t {
 	HEATER_OFF,         ///< Heater is off and the PID loop is inactive.
-	HEATER_PID_ACTIVE   ///< Heater is on and being actively controlled by the PID loop.
+	HEATER_PID_ACTIVE,  ///< Heater is on and being actively controlled by the PID loop.
+	HEATER_FAULT        ///< Latched fault state -- relay forced off, requires explicit reset.
+};
+
+/**
+ * @enum HeaterFault
+ * @brief Identifies the specific thermal protection fault that was triggered.
+ */
+enum HeaterFault : uint8_t {
+	FAULT_NONE,           ///< No fault present.
+	FAULT_MAXTEMP,        ///< Temperature exceeded absolute maximum (HEATER_MAXTEMP_C).
+	FAULT_MINTEMP,        ///< Temperature below absolute minimum (HEATER_MINTEMP_C) -- likely sensor fault.
+	FAULT_SENSOR,         ///< ADC reading out of valid range -- open or shorted thermocouple.
+	FAULT_RUNAWAY,        ///< Temperature drifted outside hysteresis band for too long.
+	FAULT_HEATING_FAILED  ///< Temperature failed to rise during heatup -- dead element or wiring fault.
+};
+
+/**
+ * @enum ThermalRunawayState
+ * @brief State machine for thermal runaway detection.
+ */
+enum ThermalRunawayState : uint8_t {
+	TR_INACTIVE,       ///< Monitoring disabled (heater off or no target).
+	TR_FIRST_HEATING,  ///< Waiting for temperature to first reach setpoint.
+	TR_STABLE          ///< Setpoint reached; monitoring for drift.
 };
 
 /**
@@ -90,6 +114,14 @@ class HeaterController {
 	 */
 	const char* getState() const;
 
+	/**
+	 * @brief Immediately turns off the heater relay and resets PID state.
+	 * @details Safe to call from disable() or any emergency path. If the heater
+	 *          is in HEATER_FAULT, the fault remains latched (requires CMD_HEATER_OFF
+	 *          to clear). Otherwise sets state to HEATER_OFF.
+	 */
+	void emergencyOff();
+
 private:
 	Fillhead* m_controller;             ///< Pointer to the main Fillhead controller for sending messages.
 	HeaterState m_heaterState;          ///< The current operational state of the heater (ON/OFF).
@@ -107,6 +139,17 @@ private:
 	float m_fanThresholdCelsius;        ///< Temperature threshold (C) above which the cooling fan activates.
 	bool m_fanActive;                   ///< Current state of the cooling fan output.
 	char m_telemetryBuffer[256];        ///< A buffer to store the formatted telemetry string.
+
+	HeaterFault m_faultCode;            ///< Current fault code (FAULT_NONE when healthy).
+
+	ThermalRunawayState m_trState;      ///< Current state of the thermal runaway detector.
+	uint32_t m_trTimerStart;            ///< Start timestamp for the runaway hysteresis window (overflow-safe).
+	float m_trTarget;                   ///< Cached target to detect setpoint changes.
+
+	uint32_t m_watchTimerStart;         ///< Start timestamp for the heating watch window (overflow-safe).
+	float m_watchStartTemp;             ///< Temperature at the start of the current watch window.
+
+	uint8_t m_adcFaultCount;            ///< Consecutive out-of-range ADC readings (debounce counter).
 
 	/**
 	 * @brief Updates the cooling fan output based on the current temperature.
@@ -135,6 +178,21 @@ private:
 	 * @param message The content of the message to send.
 	 */
 	void reportEvent(const char* statusType, const char* message);
+
+	/**
+	 * @brief Triggers a latched thermal protection fault.
+	 * @details Turns off the heater relay, forces the cooling fan on, latches the
+	 *          fault code, and reports an error. Requires CMD_HEATER_OFF to clear.
+	 * @param fault The specific fault that was detected.
+	 */
+	void triggerFault(HeaterFault fault);
+
+	/**
+	 * @brief Runs the thermal runaway state machine and heating watch timer.
+	 * @details Called from updateState() every PID cycle. Manages transitions
+	 *          between TR_INACTIVE, TR_FIRST_HEATING, and TR_STABLE states.
+	 */
+	void checkThermalProtection();
 
 	/**
 	 * @brief Turns the heater on and enables the PID control loop.

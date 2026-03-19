@@ -122,6 +122,12 @@
             "handler_param": "press_threshold",
             "type": "float",
             "description": "Force threshold for press detection"
+        },
+        {
+            "telemetry_key": "endpoint",
+            "handler_param": "telemetry_endpoint",
+            "type": "float",
+            "description": "Actual position where press operation ended"
         }
     ],
     

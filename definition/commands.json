@@ -1,5 +1,5 @@
 {
-    "discover_device": {
+    "DISCOVER_DEVICE": {
         "device": "fillhead",
         "target": "device",
         "description": "Generic command for any device to respond to.",
@@ -170,7 +170,7 @@
             { "parameter": "distance", "unit": "mm", "type": "float" },
             { "parameter": "speed", "unit": "mm/s", "type": "float" },
             { "parameter": "force", "unit": "kg", "type": "float", "help": "In motor_torque mode: 50-2000 kg. In load_cell mode: 0.2-1000 kg." },
-            { "parameter": "force_action", "type": "string", "enum": ["retract", "hold", "skip"], "optional": true, "default": "hold" }
+            { "parameter": "force_action", "type": "string", "enum": ["retract", "hold", "skip", "abort"], "optional": true, "default": "hold" }
         ],
         "returns": ["done", "error"]
     },
@@ -222,7 +222,7 @@
             { "parameter": "volume", "unit": "ml", "type": "float" },
             { "parameter": "speed", "unit": "ml/s", "type": "float", "optional": true },
             { "parameter": "force_limit", "unit": "kg", "type": "float", "optional": true },
-            { "parameter": "force_action", "unit": "", "type": "string", "optional": true, "values": ["retract", "hold", "skip", "abort"] }
+            { "parameter": "force_action", "type": "string", "optional": true, "enum": ["retract", "hold", "skip", "abort"] }
         ],
         "returns": ["done", "error"]
     },
@@ -235,27 +235,7 @@
         ],
         "returns": ["done", "error"]
     },
-    "jog_move": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Jog the injector motors by a relative distance. Use 0 for velocity, acceleration, or torque to apply defaults.",
-        "params": [
-            { "parameter": "distance1", "unit": "mm", "type": "float", "help": "Primary axis travel distance." },
-            { "parameter": "distance2", "unit": "mm", "type": "float", "help": "Reserved second axis distance (currently unused)." },
-            { "parameter": "velocity", "unit": "mm/s", "type": "float", "help": "Jog velocity. 0 uses default." },
-            { "parameter": "acceleration", "unit": "mm/s^2", "type": "float", "help": "Jog acceleration. 0 uses default." },
-            { "parameter": "torque", "unit": "%", "type": "int", "help": "Torque limit 1-100%. 0 uses default." }
-        ],
-        "returns": ["done", "error"]
-    },
     "machine_home": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Home the main machine axis.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "machine_home_move": {
         "device": "fillhead",
         "target": "device",
         "description": "Home the main machine axis and move to working position.",
@@ -263,13 +243,6 @@
         "returns": ["done", "error"]
     },
     "cartridge_home": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Home the injector against the cartridge.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "cartridge_home_move": {
         "device": "fillhead",
         "target": "device",
         "description": "Home the injector against the cartridge and move to working position.",
@@ -313,91 +286,78 @@
         "params": [],
         "returns": ["done", "error"]
     },
-    "injection_valve_home": {
+    "pinch_valve_home": {
         "device": "fillhead",
         "target": "device",
-        "description": "Home the injection valve using its hall effect sensor.",
-        "params": [],
+        "description": "Home a pinch valve using its hall effect sensor.",
+        "params": [
+            { "parameter": "valve", "type": "string", "enum": ["vacuum", "injector"], "help": "Which pinch valve to home" }
+        ],
         "returns": ["done", "error"]
     },
-    "injection_valve_home_on_boot": {
+    "pinch_valve_home_on_boot": {
         "device": "fillhead",
         "target": "device",
-        "description": "Sets whether the injection valve should automatically home on startup and saves to NVM.",
+        "description": "Sets whether a pinch valve should automatically home on startup and saves to NVM.",
         "params": [
+            { "parameter": "valve", "type": "string", "enum": ["vacuum", "injector"], "help": "Which pinch valve to configure" },
             { "parameter": "enabled", "type": "string", "enum": ["true", "false"], "help": "true = auto-home on boot, false = skip homing on boot" }
         ],
         "returns": ["done", "error"]
     },
-    "injection_valve_open": {
+    "pinch_valve_open": {
         "device": "fillhead",
         "target": "device",
-        "description": "Open the injection valve.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "injection_valve_close": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Close the injection valve.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "injection_valve_jog": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Jog the injection valve motor.",
+        "description": "Open a pinch valve (drive to home position, no torque monitoring).",
         "params": [
+            { "parameter": "valve", "type": "string", "enum": ["vacuum", "injector"], "help": "Which pinch valve to open" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "pinch_valve_close": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Close a pinch valve using torque-based detection. Optional args override NVM defaults.",
+        "params": [
+            { "parameter": "valve", "type": "string", "enum": ["vacuum", "injector"], "help": "Which pinch valve to close" },
+            { "parameter": "torque", "unit": "%", "type": "float", "optional": true, "help": "Torque limit percent (default: NVM setting)" },
+            { "parameter": "stroke", "unit": "mm", "type": "float", "optional": true, "help": "Max stroke distance (default: NVM setting)" }
+        ],
+        "returns": ["done", "error"]
+    },
+    "pinch_valve_jog": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Jog a pinch valve motor.",
+        "params": [
+            { "parameter": "valve", "type": "string", "enum": ["vacuum", "injector"], "help": "Which pinch valve to jog" },
             { "parameter": "distance", "unit": "mm", "type": "float" }
         ],
         "returns": ["done", "error"]
     },
-    "vacuum_valve_home": {
+    "set_valve_pinch_torque": {
         "device": "fillhead",
         "target": "device",
-        "description": "Home the vacuum valve using its hall effect sensor.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "vacuum_valve_home_on_boot": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Sets whether the vacuum valve should automatically home on startup and saves to NVM.",
+        "description": "Set the default pinch valve close torque limit and save to NVM. Shared by both valves.",
         "params": [
-            { "parameter": "enabled", "type": "string", "enum": ["true", "false"], "help": "true = auto-home on boot, false = skip homing on boot" }
+            { "parameter": "torque", "unit": "%", "type": "float", "help": "Torque limit percent (0-100)" }
         ],
         "returns": ["done", "error"]
     },
-    "vacuum_valve_open": {
+    "set_valve_pinch_stroke": {
         "device": "fillhead",
         "target": "device",
-        "description": "Open the vacuum valve.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "vacuum_valve_close": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Close the vacuum valve.",
-        "params": [],
-        "returns": ["done", "error"]
-    },
-    "vacuum_valve_jog": {
-        "device": "fillhead",
-        "target": "device",
-        "description": "Jog the vacuum valve motor.",
+        "description": "Set the default pinch valve close stroke distance and save to NVM. Shared by both valves.",
         "params": [
-            { "parameter": "distance", "unit": "mm", "type": "float" }
+            { "parameter": "stroke", "unit": "mm", "type": "float", "help": "Max stroke distance in mm (0-500)" }
         ],
         "returns": ["done", "error"]
     },
     "heater_on": {
         "device": "fillhead",
         "target": "device",
-        "description": "Turn the heater on.",
-        "params": [
-            { "parameter": "setpoint", "unit": "C", "type": "float", "optional": true }
-        ],
+        "description": "Turn the heater on. Uses the setpoint previously configured via set_heater_setpoint.",
+        "params": [],
         "returns": ["done", "error"]
     },
     "heater_off": {
@@ -430,10 +390,8 @@
     "vacuum_on": {
         "device": "fillhead",
         "target": "device",
-        "description": "Turn the vacuum pump on.",
-        "params": [
-            { "parameter": "target", "unit": "psi", "type": "float", "optional": true }
-        ],
+        "description": "Turn the vacuum pump on. Uses the target previously configured via set_vacuum_target.",
+        "params": [],
         "returns": ["done", "error"]
     },
     "vacuum_off": {
@@ -446,11 +404,8 @@
     "vacuum_leak_test": {
         "device": "fillhead",
         "target": "device",
-        "description": "Initiate a vacuum leak test.",
-        "params": [
-            { "parameter": "delta", "unit": "psi", "type": "float", "optional": true },
-            { "parameter": "duration", "unit": "s", "type": "float", "optional": true }
-        ],
+        "description": "Initiate a vacuum leak test. Uses delta and duration previously configured via set_leak_test_delta and set_leak_test_duration_s.",
+        "params": [],
         "returns": ["passed", "failed"]
     },
     "set_vacuum_target": {

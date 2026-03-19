@@ -298,13 +298,16 @@
 #define NVM_SLOT_INJ_VALVE_HOME_ON_BOOT         (16 * 4) ///< NVM byte offset for injection valve home-on-boot flag.
 #define NVM_SLOT_VAC_VALVE_HOME_ON_BOOT         (17 * 4) ///< NVM byte offset for vacuum valve home-on-boot flag.
 #define NVM_SLOT_CARTRIDGE_ML_PER_MM            (18 * 4) ///< NVM byte offset for cartridge ml_per_mm (stored as int * 10000).
+#define NVM_SLOT_PINCH_TORQUE                   (19 * 4) ///< NVM byte offset for shared pinch valve close torque (stored as int * 100).
+#define NVM_SLOT_PINCH_STROKE                   (20 * 4) ///< NVM byte offset for shared pinch valve close stroke (stored as int * 100).
 /** @} */
 
 /**
  * @name Pinch Valve Operation Defaults
  * @{
  */
-#define PINCH_VALVE_PINCH_TORQUE_PERCENT    10.0f     ///< Target torque (%) for closing the valve during normal operation.
+#define PINCH_VALVE_PINCH_TORQUE_PERCENT    30.0f     ///< Default torque (%) for closing the valve during normal operation.
+#define PINCH_VALVE_PINCH_STROKE_MM         100.0f    ///< Default stroke (mm) for the closing move.
 #define PINCH_VALVE_PINCH_VEL_MMS           2.0f      ///< Speed (mm/s) for the closing (pinching) move.
 #define PINCH_VALVE_OPEN_VEL_MMS            10.0f     ///< Speed (mm/s) for the opening move (returning to the homed position).
 #define PINCH_VALVE_OPEN_ACCEL_MMSS         50.0f     ///< Acceleration (mm/s^2) for the opening move.

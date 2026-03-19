@@ -130,6 +130,16 @@ void Fillhead::setup() {
     m_injectorValve.setup();
     m_vacuumValve.setup();
 
+    {
+        NvmManager &nvmMgr = NvmManager::Instance();
+        int32_t rawTorque = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_TORQUE));
+        int32_t rawStroke = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_STROKE));
+        float pinchTorque = (rawTorque > 0) ? (float)rawTorque / 100.0f : PINCH_VALVE_PINCH_TORQUE_PERCENT;
+        float pinchStroke = (rawStroke > 0) ? (float)rawStroke / 100.0f : PINCH_VALVE_PINCH_STROKE_MM;
+        m_injectorValve.setPinchDefaults(pinchTorque, pinchStroke);
+        m_vacuumValve.setPinchDefaults(pinchTorque, pinchStroke);
+    }
+
 #if WATCHDOG_ENABLED
     g_watchdogBreadcrumb = WD_BREADCRUMB_SETUP_FORCE;
 #endif
@@ -322,12 +332,12 @@ void Fillhead::loop() {
         if (m_injValveHomingPending) {
             m_injValveHomingPending = false;
             m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing injection valve...");
-            m_injectorValve.handleCommand(CMD_INJECTION_VALVE_HOME, "");
+            m_injectorValve.handleCommand(CMD_PINCH_VALVE_HOME, "");
         }
         if (m_vacValveHomingPending) {
             m_vacValveHomingPending = false;
             m_comms.reportEvent(STATUS_PREFIX_INFO, "Auto-homing vacuum valve...");
-            m_vacuumValve.handleCommand(CMD_VACUUM_VALVE_HOME, "");
+            m_vacuumValve.handleCommand(CMD_PINCH_VALVE_HOME, "");
         }
     }
 
@@ -481,6 +491,20 @@ void Fillhead::updateState() {
 }
 
 
+PinchValve* Fillhead::resolveValve(const char* &args) {
+    if (strncmp(args, "injector", 8) == 0) {
+        args += 8;
+        while (*args == ' ') args++;
+        return &m_injectorValve;
+    }
+    if (strncmp(args, "vacuum", 6) == 0) {
+        args += 6;
+        while (*args == ' ') args++;
+        return &m_vacuumValve;
+    }
+    return nullptr;
+}
+
 /**
  * @brief Master command handler; acts as a switchboard to delegate tasks.
  * @param msg The message object containing the command string and remote IP details.
@@ -570,11 +594,8 @@ void Fillhead::dispatchCommand(const Message& msg) {
             break;
 
         // --- Fillhead Injection Commands (Delegated to Injector) ---
-        case CMD_JOG_MOVE:
         case CMD_MACHINE_HOME:
-        case CMD_MACHINE_HOME_MOVE:
         case CMD_CARTRIDGE_HOME:
-        case CMD_CARTRIDGE_HOME_MOVE:
         case CMD_MOVE_TO_CARTRIDGE_HOME:
         case CMD_MOVE_TO_CARTRIDGE_RETRACT:
         case CMD_INJECT:
@@ -585,49 +606,72 @@ void Fillhead::dispatchCommand(const Message& msg) {
             m_injector.handleCommand(command_enum, args);
             break;
 
-        // --- Pinch Valve Commands ---
-        case CMD_INJECTION_VALVE_HOME:
-        case CMD_INJECTION_VALVE_OPEN:
-        case CMD_INJECTION_VALVE_CLOSE:
-        case CMD_INJECTION_VALVE_JOG:
-            m_injectorValve.handleCommand(command_enum, args);
-            break;
-        case CMD_VACUUM_VALVE_HOME:
-        case CMD_VACUUM_VALVE_OPEN:
-        case CMD_VACUUM_VALVE_CLOSE:
-        case CMD_VACUUM_VALVE_JOG:
-            m_vacuumValve.handleCommand(command_enum, args);
-            break;
-
-        case CMD_INJECTION_VALVE_HOME_ON_BOOT: {
-            char enabled[32] = "";
-            if (sscanf(args, "%31s", enabled) == 1) {
-                if (m_injectorValve.setHomeOnBoot(enabled)) {
-                    char msg_buf[128];
-                    snprintf(msg_buf, sizeof(msg_buf), "Injection valve home on boot set to '%s' and saved to NVM", enabled);
-                    reportEvent(STATUS_PREFIX_INFO, msg_buf);
-                    reportEvent(STATUS_PREFIX_DONE, "injection_valve_home_on_boot");
-                } else {
-                    reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'.");
-                }
+        // --- Pinch Valve Commands (unified) ---
+        case CMD_PINCH_VALVE_HOME:
+        case CMD_PINCH_VALVE_OPEN:
+        case CMD_PINCH_VALVE_CLOSE:
+        case CMD_PINCH_VALVE_JOG: {
+            PinchValve* valve = resolveValve(args);
+            if (valve) {
+                valve->handleCommand(command_enum, args);
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for injection_valve_home_on_boot.");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid valve selector. Use 'vacuum' or 'injector'.");
             }
             break;
         }
-        case CMD_VACUUM_VALVE_HOME_ON_BOOT: {
+
+        case CMD_PINCH_VALVE_HOME_ON_BOOT: {
+            PinchValve* valve = resolveValve(args);
+            if (!valve) {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid valve selector. Use 'vacuum' or 'injector'.");
+                break;
+            }
             char enabled[32] = "";
             if (sscanf(args, "%31s", enabled) == 1) {
-                if (m_vacuumValve.setHomeOnBoot(enabled)) {
+                if (valve->setHomeOnBoot(enabled)) {
                     char msg_buf[128];
-                    snprintf(msg_buf, sizeof(msg_buf), "Vacuum valve home on boot set to '%s' and saved to NVM", enabled);
+                    snprintf(msg_buf, sizeof(msg_buf), "Pinch valve home on boot set to '%s' and saved to NVM", enabled);
                     reportEvent(STATUS_PREFIX_INFO, msg_buf);
-                    reportEvent(STATUS_PREFIX_DONE, "vacuum_valve_home_on_boot");
+                    reportEvent(STATUS_PREFIX_DONE, "pinch_valve_home_on_boot");
                 } else {
                     reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Use 'true' or 'false'.");
                 }
             } else {
-                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for vacuum_valve_home_on_boot.");
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter for pinch_valve_home_on_boot.");
+            }
+            break;
+        }
+
+        case CMD_SET_VALVE_PINCH_TORQUE: {
+            float val = 0;
+            if (args && sscanf(args, "%f", &val) == 1 && val > 0.0f && val <= 100.0f) {
+                NvmManager &nvmMgr = NvmManager::Instance();
+                nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_TORQUE), (int32_t)(val * 100.0f));
+                m_injectorValve.setPinchDefaults(val, -1);
+                m_vacuumValve.setPinchDefaults(val, -1);
+                char msg_buf[128];
+                snprintf(msg_buf, sizeof(msg_buf), "Valve pinch torque set to %.1f%% and saved to NVM", val);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                reportEvent(STATUS_PREFIX_DONE, "set_valve_pinch_torque");
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Provide torque percent (0-100).");
+            }
+            break;
+        }
+
+        case CMD_SET_VALVE_PINCH_STROKE: {
+            float val = 0;
+            if (args && sscanf(args, "%f", &val) == 1 && val > 0.0f && val <= 500.0f) {
+                NvmManager &nvmMgr = NvmManager::Instance();
+                nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_STROKE), (int32_t)(val * 100.0f));
+                m_injectorValve.setPinchDefaults(-1, val);
+                m_vacuumValve.setPinchDefaults(-1, val);
+                char msg_buf[128];
+                snprintf(msg_buf, sizeof(msg_buf), "Valve pinch stroke set to %.1fmm and saved to NVM", val);
+                reportEvent(STATUS_PREFIX_INFO, msg_buf);
+                reportEvent(STATUS_PREFIX_DONE, "set_valve_pinch_stroke");
+            } else {
+                reportEvent(STATUS_PREFIX_ERROR, "Invalid parameter. Provide stroke in mm (0-500).");
             }
             break;
         }
@@ -959,16 +1003,24 @@ void Fillhead::dispatchCommand(const Message& msg) {
                      (vacValveHob == 1) ? "true" : "false");
             sendMessage(nvm_buf);
 
+            int32_t rawPinchTorque = nvmMgrValve.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_TORQUE));
+            int32_t rawPinchStroke = nvmMgrValve.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_STROKE));
+            float pinchTorque = (rawPinchTorque > 0) ? (float)rawPinchTorque / 100.0f : PINCH_VALVE_PINCH_TORQUE_PERCENT;
+            float pinchStroke = (rawPinchStroke > 0) ? (float)rawPinchStroke / 100.0f : PINCH_VALVE_PINCH_STROKE_MM;
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: PinchTorque=%.1f%% PinchStroke=%.1fmm",
+                     pinchTorque, pinchStroke);
+            sendMessage(nvm_buf);
+
             reportEvent(STATUS_PREFIX_DONE, "dump_nvm");
             break;
         }
 
         case CMD_RESET_NVM: {
             NvmManager &nvmMgr = NvmManager::Instance();
-            for (int i = 0; i <= 18; ++i) {
+            for (int i = 0; i <= 20; ++i) {
                 nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(i * 4), -1);
             }
-            reportEvent(STATUS_PREFIX_INFO, "All NVM locations (slots 0-18) reset to erased state. Reboot required.");
+            reportEvent(STATUS_PREFIX_INFO, "All NVM locations (slots 0-20) reset to erased state. Reboot required.");
             reportEvent(STATUS_PREFIX_DONE, "reset_nvm");
             break;
         }

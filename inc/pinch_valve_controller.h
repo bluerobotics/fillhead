@@ -96,8 +96,9 @@ public:
 
 	/**
 	 * @brief Commands the valve to move to the fully closed (pinched) position.
+	 * @param args Optional args string: "[torque%] [stroke_mm]". Falls back to NVM defaults.
 	 */
-	void close();
+	void close(const char* args);
 
 	/**
 	 * @brief Commands the valve to perform a manual jog move.
@@ -135,6 +136,13 @@ public:
 	 * @return `true` if the sensor is in its active (triggered) state.
 	 */
 	bool isHomeSensorTriggered() const;
+
+	/**
+	 * @brief Sets the runtime pinch close defaults (loaded from NVM by Fillhead).
+	 * @param torque Default close torque limit in percent.
+	 * @param stroke Default close stroke distance in mm.
+	 */
+	void setPinchDefaults(float torque, float stroke);
 
 private:
 	typedef enum {
@@ -196,6 +204,9 @@ private:
 	float m_torqueLimit;
 	float m_smoothedTorque;
 	bool m_firstTorqueReading;
+
+	float m_defaultPinchTorque;
+	float m_defaultPinchStroke;
 
 	char m_telemetryBuffer[160];
 

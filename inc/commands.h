@@ -60,11 +60,8 @@
  */
 #define CMD_STR_INJECT                      "inject "
 #define CMD_STR_SET_CARTRIDGE_ML_PER_MM         "set_cartridge_ml_per_mm "
-#define CMD_STR_JOG_MOVE                    "jog_move "
 #define CMD_STR_MACHINE_HOME                "machine_home"
-#define CMD_STR_MACHINE_HOME_MOVE           "machine_home_move"
 #define CMD_STR_CARTRIDGE_HOME              "cartridge_home"
-#define CMD_STR_CARTRIDGE_HOME_MOVE         "cartridge_home_move"
 #define CMD_STR_MOVE_TO_CARTRIDGE_HOME      "move_to_cartridge_home"
 #define CMD_STR_MOVE_TO_CARTRIDGE_RETRACT   "move_to_cartridge_retract "
 #define CMD_STR_PAUSE_INJECTION             "pause_injection"
@@ -76,16 +73,13 @@
  * @name Valve Commands (Fillhead-specific)
  * @{
  */
-#define CMD_STR_INJECTION_VALVE_HOME_ON_BOOT "injection_valve_home_on_boot "
-#define CMD_STR_INJECTION_VALVE_HOME        "injection_valve_home"
-#define CMD_STR_INJECTION_VALVE_OPEN        "injection_valve_open"
-#define CMD_STR_INJECTION_VALVE_CLOSE       "injection_valve_close"
-#define CMD_STR_INJECTION_VALVE_JOG         "injection_valve_jog "
-#define CMD_STR_VACUUM_VALVE_HOME_ON_BOOT   "vacuum_valve_home_on_boot "
-#define CMD_STR_VACUUM_VALVE_HOME           "vacuum_valve_home"
-#define CMD_STR_VACUUM_VALVE_OPEN           "vacuum_valve_open"
-#define CMD_STR_VACUUM_VALVE_CLOSE          "vacuum_valve_close"
-#define CMD_STR_VACUUM_VALVE_JOG            "vacuum_valve_jog "
+#define CMD_STR_PINCH_VALVE_HOME_ON_BOOT    "pinch_valve_home_on_boot "
+#define CMD_STR_PINCH_VALVE_HOME            "pinch_valve_home "
+#define CMD_STR_PINCH_VALVE_OPEN            "pinch_valve_open "
+#define CMD_STR_PINCH_VALVE_CLOSE           "pinch_valve_close "
+#define CMD_STR_PINCH_VALVE_JOG             "pinch_valve_jog "
+#define CMD_STR_SET_VALVE_PINCH_TORQUE      "set_valve_pinch_torque "
+#define CMD_STR_SET_VALVE_PINCH_STROKE      "set_valve_pinch_stroke "
 /** @} */
 
 /**
@@ -153,11 +147,8 @@ typedef enum {
     // Fillhead Injection Commands
     CMD_INJECT,
     CMD_SET_CARTRIDGE_ML_PER_MM,
-    CMD_JOG_MOVE,
     CMD_MACHINE_HOME,
-    CMD_MACHINE_HOME_MOVE,
     CMD_CARTRIDGE_HOME,
-    CMD_CARTRIDGE_HOME_MOVE,
     CMD_MOVE_TO_CARTRIDGE_HOME,
     CMD_MOVE_TO_CARTRIDGE_RETRACT,
     CMD_PAUSE_INJECTION,
@@ -165,16 +156,13 @@ typedef enum {
     CMD_CANCEL_INJECTION,
 
     // Valve Commands
-    CMD_INJECTION_VALVE_HOME_ON_BOOT,
-    CMD_INJECTION_VALVE_HOME,
-    CMD_INJECTION_VALVE_OPEN,
-    CMD_INJECTION_VALVE_CLOSE,
-    CMD_INJECTION_VALVE_JOG,
-    CMD_VACUUM_VALVE_HOME_ON_BOOT,
-    CMD_VACUUM_VALVE_HOME,
-    CMD_VACUUM_VALVE_OPEN,
-    CMD_VACUUM_VALVE_CLOSE,
-    CMD_VACUUM_VALVE_JOG,
+    CMD_PINCH_VALVE_HOME_ON_BOOT,
+    CMD_PINCH_VALVE_HOME,
+    CMD_PINCH_VALVE_OPEN,
+    CMD_PINCH_VALVE_CLOSE,
+    CMD_PINCH_VALVE_JOG,
+    CMD_SET_VALVE_PINCH_TORQUE,
+    CMD_SET_VALVE_PINCH_STROKE,
 
     // Heater Commands
     CMD_HEATER_ON,

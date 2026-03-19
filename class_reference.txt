@@ -107,7 +107,6 @@
     - finalizeAndResetActiveDispenseOperation
     - fullyResetActiveDispenseOperation
     - reportEvent
-    - jogMove
     - machineHome
     - cartridgeHome
     - moveToCartridgeHome

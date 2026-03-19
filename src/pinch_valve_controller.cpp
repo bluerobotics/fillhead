@@ -33,6 +33,8 @@ PinchValve::PinchValve(const char* name, MotorDriver* motor, DigitalIn& homeSens
     m_torqueLimit(0.0f),
     m_smoothedTorque(0.0f),
     m_firstTorqueReading(true),
+    m_defaultPinchTorque(PINCH_VALVE_PINCH_TORQUE_PERCENT),
+    m_defaultPinchStroke(PINCH_VALVE_PINCH_STROKE_MM),
     m_activeCommandStr(nullptr),
     m_homingDistanceSteps(0),
     m_homingBackoffSteps(0),
@@ -210,12 +212,7 @@ void PinchValve::updateState() {
                     break;
                 case PHASE_MOVING:
                     if (m_moveType == MOVE_TYPE_OPEN) {
-                        if (checkTorqueLimit()) {
-                            abort();
-                            m_state = VALVE_ERROR;
-                            m_isHomed = false;
-                            reportEvent(STATUS_PREFIX_ERROR, "Open failed: Torque limit hit unexpectedly.");
-                        } else if (!m_motor->StatusReg().bit.StepsActive) {
+                        if (!m_motor->StatusReg().bit.StepsActive) {
                             m_state = VALVE_OPEN;
                             char doneMsg[128];
                             snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
@@ -311,36 +308,20 @@ void PinchValve::handleCommand(Command cmd, const char* args) {
     }
 
     switch(cmd) {
-        case CMD_INJECTION_VALVE_HOME:
-            m_activeCommandStr = CMD_STR_INJECTION_VALVE_HOME;
+        case CMD_PINCH_VALVE_HOME:
+            m_activeCommandStr = CMD_STR_PINCH_VALVE_HOME;
             home();
             break;
-        case CMD_VACUUM_VALVE_HOME:
-            m_activeCommandStr = CMD_STR_VACUUM_VALVE_HOME;
-            home();
-            break;
-        case CMD_INJECTION_VALVE_OPEN:
-            m_activeCommandStr = CMD_STR_INJECTION_VALVE_OPEN;
+        case CMD_PINCH_VALVE_OPEN:
+            m_activeCommandStr = CMD_STR_PINCH_VALVE_OPEN;
             open();
             break;
-        case CMD_VACUUM_VALVE_OPEN:
-            m_activeCommandStr = CMD_STR_VACUUM_VALVE_OPEN;
-            open();
+        case CMD_PINCH_VALVE_CLOSE:
+            m_activeCommandStr = CMD_STR_PINCH_VALVE_CLOSE;
+            close(args);
             break;
-        case CMD_INJECTION_VALVE_CLOSE:
-            m_activeCommandStr = CMD_STR_INJECTION_VALVE_CLOSE;
-            close();
-            break;
-        case CMD_VACUUM_VALVE_CLOSE:
-            m_activeCommandStr = CMD_STR_VACUUM_VALVE_CLOSE;
-            close();
-            break;
-        case CMD_INJECTION_VALVE_JOG:
-            m_activeCommandStr = CMD_STR_INJECTION_VALVE_JOG;
-            jog(args);
-            break;
-        case CMD_VACUUM_VALVE_JOG:
-            m_activeCommandStr = CMD_STR_VACUUM_VALVE_JOG;
+        case CMD_PINCH_VALVE_JOG:
+            m_activeCommandStr = CMD_STR_PINCH_VALVE_JOG;
             jog(args);
             break;
         default:
@@ -376,7 +357,6 @@ void PinchValve::open() {
     m_moveType = MOVE_TYPE_OPEN;
     m_opPhase = PHASE_WAIT_TO_START;
     m_moveStartTime = Milliseconds();
-    m_torqueLimit = JOG_DEFAULT_TORQUE_PERCENT;
 
     long target_steps = 0;
     long current_steps = m_motor->PositionRefCommanded();
@@ -386,20 +366,41 @@ void PinchValve::open() {
     moveSteps(target_steps - current_steps, vel_sps, accel_sps2);
 }
 
-void PinchValve::close() {
+void PinchValve::close(const char* args) {
     if (!m_isHomed) {
         reportEvent(STATUS_PREFIX_ERROR, "Valve must be homed before closing.");
         return;
     }
+
+    float torque = m_defaultPinchTorque;
+    float stroke = m_defaultPinchStroke;
+
+    if (args && *args != '\0') {
+        const char* p = args;
+        while (*p == ' ') p++;
+        if (*p != '\0') {
+            torque = (float)atof(p);
+            while (*p != ' ' && *p != '\0') p++;
+            while (*p == ' ') p++;
+            if (*p != '\0') {
+                stroke = (float)atof(p);
+            }
+        }
+    }
+
     m_state = VALVE_MOVING;
     m_moveType = MOVE_TYPE_CLOSE;
     m_opPhase = PHASE_WAIT_TO_START;
     m_moveStartTime = Milliseconds();
-    m_torqueLimit = PINCH_VALVE_PINCH_TORQUE_PERCENT;
+    m_torqueLimit = torque;
 
-    long long_move_steps = (long)(PINCH_HOMING_STROKE_MM * STEPS_PER_MM_PINCH);
+    long long_move_steps = (long)(stroke * STEPS_PER_MM_PINCH);
     int vel_sps = (int)(PINCH_VALVE_PINCH_VEL_MMS * STEPS_PER_MM_PINCH);
     int accel_sps2 = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "%s closing: torque=%.1f%%, stroke=%.1fmm", m_name, torque, stroke);
+    reportEvent(STATUS_PREFIX_INFO, msg);
 
     moveSteps(long_move_steps, vel_sps, accel_sps2);
 }
@@ -506,15 +507,20 @@ float PinchValve::getSmoothedTorque() {
 bool PinchValve::checkTorqueLimit() {
     if (m_motor->StatusReg().bit.StepsActive) {
         float torque = getInstantaneousTorque();
-        if (torque > m_torqueLimit) {
+        if (fabs(torque) > m_torqueLimit) {
             m_motor->MoveStopAbrupt();
             char torque_msg[STATUS_MESSAGE_BUFFER_SIZE];
-            snprintf(torque_msg, sizeof(torque_msg), "%s TORQUE LIMIT REACHED (%.1f%%)", m_name, m_torqueLimit);
+            snprintf(torque_msg, sizeof(torque_msg), "%s TORQUE LIMIT REACHED (%.1f%%, raw=%.1f%%)", m_name, m_torqueLimit, torque);
             reportEvent(STATUS_PREFIX_INFO, torque_msg);
             return true;
         }
     }
     return false;
+}
+
+void PinchValve::setPinchDefaults(float torque, float stroke) {
+    if (torque > 0) m_defaultPinchTorque = torque;
+    if (stroke > 0) m_defaultPinchStroke = stroke;
 }
 
 // --- NVM Home-on-Boot ---

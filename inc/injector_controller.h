@@ -388,7 +388,6 @@ private:
     // ── Private Command Handlers ─────────────────────────────────────────
     /** @name Private Command Handlers @{ */
 
-    void jogMove(const char* args);
     void machineHome();
     void cartridgeHome();
     void moveToCartridgeHome();
@@ -423,7 +422,6 @@ private:
     typedef enum {
         STATE_STANDBY,      ///< Injector is idle and ready for commands.
         STATE_HOMING,       ///< Injector is performing a homing sequence.
-        STATE_JOGGING,      ///< Injector is performing a manual jog move.
         STATE_FEEDING,      ///< Injector is performing an injection or retract move.
         STATE_MOVING,       ///< Injector is performing a general move_abs/move_inc operation.
         STATE_MOTOR_FAULT   ///< An injector motor has entered a hardware fault state.
@@ -548,7 +546,6 @@ private:
     // ── Command Tracking ─────────────────────────────────────────────────
 
     const char* m_activeFeedCommand;   ///< Stores the original feed command string for logging upon completion.
-    const char* m_activeJogCommand;    ///< Stores the original jog command string for logging upon completion.
     const char* m_activeMoveCommand;   ///< Stores the original move command string for logging upon completion.
     const char* m_originalMoveCommand; ///< Stores the very first command before any retract substitution.
 

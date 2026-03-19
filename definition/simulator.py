@@ -112,20 +112,14 @@ def handle_command(device_sim, command, args, gui_address):
         device_sim.state['cartridge_ml_per_mm'] = ratio
         return False
 
-    elif cmd_lower == "jog_move":
-        distance = float(args[0]) if args else 0.0
-        device_sim.state['inj_mach_mm'] = (
-            device_sim.state.get('inj_mach_mm', 0.0) + distance)
-        return False
-
-    elif cmd_lower in ("machine_home", "machine_home_move"):
+    elif cmd_lower == "machine_home":
         device_sim.set_state('MAIN_STATE', 'HOMING')
         device_sim.command_queue.append(
             (simulate_injector_homing,
              (device_sim, 'machine', 2.0, gui_address, command)))
         return True
 
-    elif cmd_lower in ("cartridge_home", "cartridge_home_move"):
+    elif cmd_lower == "cartridge_home":
         device_sim.set_state('MAIN_STATE', 'HOMING')
         device_sim.command_queue.append(
             (simulate_injector_homing,
@@ -154,46 +148,46 @@ def handle_command(device_sim, command, args, gui_address):
 
     # ── Valve commands ────────────────────────────────────────────────
 
-    elif cmd_lower.startswith("injection_valve_"):
-        action = cmd_lower[len("injection_valve_"):]
+    elif cmd_lower.startswith("pinch_valve_"):
+        action = cmd_lower[len("pinch_valve_"):]
+        if not args:
+            return False
+        valve_sel = args.pop(0)
+        if valve_sel == 'injector':
+            prefix = 'inj_valve'
+        elif valve_sel == 'vacuum':
+            prefix = 'vac_valve'
+        else:
+            return False
+
         if action == 'home':
             device_sim.set_state('MAIN_STATE', 'HOMING')
             device_sim.command_queue.append(
                 (simulate_valve_homing,
-                 (device_sim, 'inj_valve', 1.5, gui_address, command)))
+                 (device_sim, prefix, 1.5, gui_address, command)))
             return True
         elif action == 'open':
-            device_sim.state['inj_valve_st'] = 'Open'
-        elif action == 'close':
-            device_sim.state['inj_valve_st'] = 'Closed'
+            device_sim.state[f'{prefix}_st'] = 'Open'
+            device_sim.state[f'{prefix}_pos'] = 0.0
+        elif action.startswith('close'):
+            device_sim.state[f'{prefix}_st'] = 'Closed'
         elif action == 'jog':
             d = float(args[0]) if args else 0.0
-            device_sim.state['inj_valve_pos'] = (
-                device_sim.state.get('inj_valve_pos', 0.0) + d)
+            device_sim.state[f'{prefix}_pos'] = (
+                device_sim.state.get(f'{prefix}_pos', 0.0) + d)
         elif action.startswith('home_on_boot'):
             val = args[0] if args else 'true'
-            device_sim.state['inj_valve_home_on_boot'] = (val == 'true')
+            device_sim.state[f'{prefix}_home_on_boot'] = (val == 'true')
         return False
 
-    elif cmd_lower.startswith("vacuum_valve_"):
-        action = cmd_lower[len("vacuum_valve_"):]
-        if action == 'home':
-            device_sim.set_state('MAIN_STATE', 'HOMING')
-            device_sim.command_queue.append(
-                (simulate_valve_homing,
-                 (device_sim, 'vac_valve', 1.5, gui_address, command)))
-            return True
-        elif action == 'open':
-            device_sim.state['vac_valve_st'] = 'Open'
-        elif action == 'close':
-            device_sim.state['vac_valve_st'] = 'Closed'
-        elif action == 'jog':
-            d = float(args[0]) if args else 0.0
-            device_sim.state['vac_valve_pos'] = (
-                device_sim.state.get('vac_valve_pos', 0.0) + d)
-        elif action.startswith('home_on_boot'):
-            val = args[0] if args else 'true'
-            device_sim.state['vac_valve_home_on_boot'] = (val == 'true')
+    elif cmd_lower == 'set_valve_pinch_torque':
+        val = float(args[0]) if args else 30.0
+        device_sim.state['pinch_torque_pct'] = val
+        return False
+
+    elif cmd_lower == 'set_valve_pinch_stroke':
+        val = float(args[0]) if args else 100.0
+        device_sim.state['pinch_stroke_mm'] = val
         return False
 
     # ── Heater commands ───────────────────────────────────────────────
@@ -584,6 +578,8 @@ if __name__ == "__main__":
         'vac_valve_pos': 0.0,
         'vac_valve_home_sensor': 0,
         'vac_valve_home_on_boot': True,
+        'pinch_torque_pct': 30.0,
+        'pinch_stroke_mm': 100.0,
         'h_st': 0,
         'h_sp': 70.0,
         'h_pv': 25.0,

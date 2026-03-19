@@ -170,6 +170,14 @@ private:
      */
     void standby();
 
+    /**
+     * @brief Parses the valve selector from a unified pinch_valve command's args.
+     * @param args On entry, points to "vacuum ..." or "injector ...". On return,
+     *             advanced past the selector and any trailing spaces to the remaining args.
+     * @return Pointer to the matching PinchValve, or nullptr if the selector is invalid.
+     */
+    PinchValve* resolveValve(const char* &args);
+
 #if WATCHDOG_ENABLED
     /**
      * @brief Checks for watchdog recovery after motor setup.

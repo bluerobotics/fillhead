@@ -14,7 +14,8 @@
             "1": "homing",
             "2": "jogging",
             "3": "feeding",
-            "4": "motor fault"
+            "4": "moving",
+            "5": "motor fault"
         },
         "help": "Current operational state of the injector motors",
         "gui_var": "fillhead_injector_state_var"
@@ -86,8 +87,17 @@
         "default": 0.0,
         "precision": 1,
         "firmware_key": "inj_t0",
-        "help": "Current motor torque percentage for injector (motor 0)",
+        "help": "Current motor torque percentage for injector motor A (M0)",
         "gui_var": "fillhead_injector_torque_var"
+    },
+    "injector_torque_m1": {
+        "unit": "%",
+        "type": "float",
+        "default": 0.0,
+        "precision": 1,
+        "firmware_key": "inj_t1",
+        "help": "Current motor torque percentage for injector motor B (M1)",
+        "gui_var": "fillhead_injector_torque_m1_var"
     },
     "injector_homed": {
         "type": "int",
@@ -99,6 +109,35 @@
         },
         "help": "Indicates if injector has been homed to machine zero",
         "gui_var": "fillhead_injector_homed_var"
+    },
+    "injector_cartridge_homed": {
+        "type": "int",
+        "default": 0,
+        "firmware_key": "inj_h_cart",
+        "map": {
+            "0": "not homed",
+            "1": "homed"
+        },
+        "help": "Indicates if injector has been homed to cartridge",
+        "gui_var": "fillhead_injector_cartridge_homed_var"
+    },
+    "injector_machine_pos": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "firmware_key": "inj_mach_mm",
+        "help": "Injector position relative to machine home",
+        "gui_var": "fillhead_injector_machine_pos_var"
+    },
+    "injector_cartridge_pos": {
+        "unit": "mm",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "firmware_key": "inj_cart_mm",
+        "help": "Injector position relative to cartridge home",
+        "gui_var": "fillhead_injector_cartridge_pos_var"
     },
     "injection_cumulative_ml": {
         "unit": "ml",
@@ -164,6 +203,16 @@
         "help": "Indicates if injection valve has been homed",
         "gui_var": "fillhead_inj_valve_homed_var"
     },
+    "inj_valve_home_sensor": {
+        "type": "int",
+        "default": 0,
+        "map": {
+            "0": "inactive",
+            "1": "active"
+        },
+        "help": "Injection valve hall effect home sensor state",
+        "gui_var": "fillhead_inj_valve_home_sensor_var"
+    },
     "vac_valve_pos": {
         "unit": "mm",
         "type": "float",
@@ -191,6 +240,16 @@
         "help": "Indicates if vacuum valve has been homed",
         "gui_var": "fillhead_vac_valve_homed_var"
     },
+    "vac_valve_home_sensor": {
+        "type": "int",
+        "default": 0,
+        "map": {
+            "0": "inactive",
+            "1": "active"
+        },
+        "help": "Vacuum valve hall effect home sensor state",
+        "gui_var": "fillhead_vac_valve_home_sensor_var"
+    },
     "temp_c": {
         "unit": "C",
         "type": "float",
@@ -209,6 +268,15 @@
         "help": "Target temperature setpoint for PID controller",
         "gui_var": "fillhead_heater_setpoint_var"
     },
+    "heater_output": {
+        "unit": "%",
+        "type": "float",
+        "default": 0.0,
+        "precision": 1,
+        "firmware_key": "h_op",
+        "help": "Heater PID controller output percentage",
+        "gui_var": "fillhead_heater_output_var"
+    },
     "vacuum_psig": {
         "unit": "PSIG",
         "type": "float",
@@ -217,6 +285,15 @@
         "firmware_key": "vac_pv",
         "help": "Current vacuum pressure reading",
         "gui_var": "fillhead_vacuum_psig_var"
+    },
+    "vacuum_target": {
+        "unit": "PSIG",
+        "type": "float",
+        "default": -10.0,
+        "precision": 1,
+        "firmware_key": "vac_sp",
+        "help": "Vacuum target setpoint pressure",
+        "gui_var": "fillhead_vacuum_target_var"
     },
     "force_load_cell": {
         "unit": "kg",
@@ -244,6 +321,15 @@
         "firmware_key": "fl",
         "help": "Maximum force limit for current operation",
         "gui_var": "fillhead_force_limit_var"
+    },
+    "force": {
+        "unit": "kg",
+        "type": "float",
+        "default": 0.0,
+        "precision": 2,
+        "derived_from": ["force_load_cell", "force_motor_torque", "force_mode"],
+        "help": "Active force value, selected by force_mode (load_cell or motor_torque)",
+        "gui_var": "fillhead_force_var"
     },
     "force_source": {
         "type": "string",
@@ -397,5 +483,51 @@
         "firmware_key": "pol",
         "help": "Coordinate system polarity (normal or inverted)",
         "gui_var": "fillhead_polarity_var"
+    },
+    "injector_state_str": {
+        "type": "string",
+        "default": "Standby",
+        "firmware_key": "inj_st",
+        "help": "Human-readable injector state string",
+        "gui_var": "fillhead_injector_state_str_var"
+    },
+    "inj_valve_state_str": {
+        "type": "string",
+        "default": "Not Homed",
+        "firmware_key": "inj_v_st",
+        "help": "Human-readable injection valve state string",
+        "gui_var": "fillhead_inj_valve_state_str_var"
+    },
+    "vac_valve_state_str": {
+        "type": "string",
+        "default": "Not Homed",
+        "firmware_key": "vac_v_st",
+        "help": "Human-readable vacuum valve state string",
+        "gui_var": "fillhead_vac_valve_state_str_var"
+    },
+    "heater_state_str": {
+        "type": "string",
+        "default": "Off",
+        "firmware_key": "h_st_str",
+        "help": "Human-readable heater state string",
+        "gui_var": "fillhead_heater_state_str_var"
+    },
+    "vacuum_state_str": {
+        "type": "string",
+        "default": "Off",
+        "firmware_key": "vac_st_str",
+        "help": "Human-readable vacuum state string",
+        "gui_var": "fillhead_vacuum_state_str_var"
+    },
+    "light_curtain": {
+        "type": "int",
+        "default": 0,
+        "firmware_key": "lc",
+        "map": {
+            "0": "clear",
+            "1": "tripped"
+        },
+        "help": "Light curtain safety sensor state",
+        "gui_var": "fillhead_light_curtain_var"
     }
 }

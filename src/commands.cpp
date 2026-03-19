@@ -27,17 +27,14 @@ Command parseCommand(const char* cmdStr) {
     if (strncmp(cmdStr, CMD_STR_HOME_ON_BOOT, strlen(CMD_STR_HOME_ON_BOOT)) == 0) return CMD_HOME_ON_BOOT;
 
     // Fillhead injection commands (longer prefixes first)
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_HOME_ON_BOOT, strlen(CMD_STR_INJECTION_VALVE_HOME_ON_BOOT)) == 0) return CMD_INJECTION_VALVE_HOME_ON_BOOT;
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_HOME, strlen(CMD_STR_INJECTION_VALVE_HOME)) == 0) return CMD_INJECTION_VALVE_HOME;
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_OPEN, strlen(CMD_STR_INJECTION_VALVE_OPEN)) == 0) return CMD_INJECTION_VALVE_OPEN;
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_CLOSE, strlen(CMD_STR_INJECTION_VALVE_CLOSE)) == 0) return CMD_INJECTION_VALVE_CLOSE;
-    if (strncmp(cmdStr, CMD_STR_INJECTION_VALVE_JOG, strlen(CMD_STR_INJECTION_VALVE_JOG)) == 0) return CMD_INJECTION_VALVE_JOG;
+    if (strncmp(cmdStr, CMD_STR_PINCH_VALVE_HOME_ON_BOOT, strlen(CMD_STR_PINCH_VALVE_HOME_ON_BOOT)) == 0) return CMD_PINCH_VALVE_HOME_ON_BOOT;
+    if (strncmp(cmdStr, CMD_STR_PINCH_VALVE_HOME, strlen(CMD_STR_PINCH_VALVE_HOME)) == 0) return CMD_PINCH_VALVE_HOME;
+    if (strncmp(cmdStr, CMD_STR_PINCH_VALVE_OPEN, strlen(CMD_STR_PINCH_VALVE_OPEN)) == 0) return CMD_PINCH_VALVE_OPEN;
+    if (strncmp(cmdStr, CMD_STR_PINCH_VALVE_CLOSE, strlen(CMD_STR_PINCH_VALVE_CLOSE)) == 0) return CMD_PINCH_VALVE_CLOSE;
+    if (strncmp(cmdStr, CMD_STR_PINCH_VALVE_JOG, strlen(CMD_STR_PINCH_VALVE_JOG)) == 0) return CMD_PINCH_VALVE_JOG;
 
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_HOME_ON_BOOT, strlen(CMD_STR_VACUUM_VALVE_HOME_ON_BOOT)) == 0) return CMD_VACUUM_VALVE_HOME_ON_BOOT;
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_HOME, strlen(CMD_STR_VACUUM_VALVE_HOME)) == 0) return CMD_VACUUM_VALVE_HOME;
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_OPEN, strlen(CMD_STR_VACUUM_VALVE_OPEN)) == 0) return CMD_VACUUM_VALVE_OPEN;
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_CLOSE, strlen(CMD_STR_VACUUM_VALVE_CLOSE)) == 0) return CMD_VACUUM_VALVE_CLOSE;
-    if (strncmp(cmdStr, CMD_STR_VACUUM_VALVE_JOG, strlen(CMD_STR_VACUUM_VALVE_JOG)) == 0) return CMD_VACUUM_VALVE_JOG;
+    if (strncmp(cmdStr, CMD_STR_SET_VALVE_PINCH_TORQUE, strlen(CMD_STR_SET_VALVE_PINCH_TORQUE)) == 0) return CMD_SET_VALVE_PINCH_TORQUE;
+    if (strncmp(cmdStr, CMD_STR_SET_VALVE_PINCH_STROKE, strlen(CMD_STR_SET_VALVE_PINCH_STROKE)) == 0) return CMD_SET_VALVE_PINCH_STROKE;
 
     // Heater commands
     if (strncmp(cmdStr, CMD_STR_SET_HEATER_SETPOINT, strlen(CMD_STR_SET_HEATER_SETPOINT)) == 0) return CMD_SET_HEATER_SETPOINT;
@@ -59,15 +56,11 @@ Command parseCommand(const char* cmdStr) {
     if (strncmp(cmdStr, CMD_STR_INJECT, strlen(CMD_STR_INJECT)) == 0) return CMD_INJECT;
     if (strncmp(cmdStr, CMD_STR_MOVE_TO_CARTRIDGE_RETRACT, strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT)) == 0) return CMD_MOVE_TO_CARTRIDGE_RETRACT;
     if (strncmp(cmdStr, CMD_STR_MOVE_TO_CARTRIDGE_HOME, strlen(CMD_STR_MOVE_TO_CARTRIDGE_HOME)) == 0) return CMD_MOVE_TO_CARTRIDGE_HOME;
-    if (strncmp(cmdStr, CMD_STR_CARTRIDGE_HOME_MOVE, strlen(CMD_STR_CARTRIDGE_HOME_MOVE)) == 0) return CMD_CARTRIDGE_HOME_MOVE;
     if (strncmp(cmdStr, CMD_STR_CARTRIDGE_HOME, strlen(CMD_STR_CARTRIDGE_HOME)) == 0) return CMD_CARTRIDGE_HOME;
-    if (strncmp(cmdStr, CMD_STR_MACHINE_HOME_MOVE, strlen(CMD_STR_MACHINE_HOME_MOVE)) == 0) return CMD_MACHINE_HOME_MOVE;
     if (strncmp(cmdStr, CMD_STR_MACHINE_HOME, strlen(CMD_STR_MACHINE_HOME)) == 0) return CMD_MACHINE_HOME;
     if (strncmp(cmdStr, CMD_STR_PAUSE_INJECTION, strlen(CMD_STR_PAUSE_INJECTION)) == 0) return CMD_PAUSE_INJECTION;
     if (strncmp(cmdStr, CMD_STR_RESUME_INJECTION, strlen(CMD_STR_RESUME_INJECTION)) == 0) return CMD_RESUME_INJECTION;
     if (strncmp(cmdStr, CMD_STR_CANCEL_INJECTION, strlen(CMD_STR_CANCEL_INJECTION)) == 0) return CMD_CANCEL_INJECTION;
-    if (strncmp(cmdStr, CMD_STR_JOG_MOVE, strlen(CMD_STR_JOG_MOVE)) == 0) return CMD_JOG_MOVE;
-
     // General motion (from Pressboi - shorter, must be AFTER longer prefixes)
     if (strncmp(cmdStr, CMD_STR_SET_RETRACT, strlen(CMD_STR_SET_RETRACT)) == 0) return CMD_SET_RETRACT;
     if (strncmp(cmdStr, CMD_STR_MOVE_ABS, strlen(CMD_STR_MOVE_ABS)) == 0) return CMD_MOVE_ABS;
@@ -100,12 +93,14 @@ const char* getCommandParams(const char* cmdStr, Command cmd) {
         case CMD_SET_PRESS_THRESHOLD: return cmdStr + strlen(CMD_STR_SET_PRESS_THRESHOLD);
         case CMD_INJECT:              return cmdStr + strlen(CMD_STR_INJECT);
         case CMD_SET_CARTRIDGE_ML_PER_MM: return cmdStr + strlen(CMD_STR_SET_CARTRIDGE_ML_PER_MM);
-        case CMD_JOG_MOVE:            return cmdStr + strlen(CMD_STR_JOG_MOVE);
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: return cmdStr + strlen(CMD_STR_MOVE_TO_CARTRIDGE_RETRACT);
-        case CMD_INJECTION_VALVE_JOG: return cmdStr + strlen(CMD_STR_INJECTION_VALVE_JOG);
-        case CMD_INJECTION_VALVE_HOME_ON_BOOT: return cmdStr + strlen(CMD_STR_INJECTION_VALVE_HOME_ON_BOOT);
-        case CMD_VACUUM_VALVE_JOG:    return cmdStr + strlen(CMD_STR_VACUUM_VALVE_JOG);
-        case CMD_VACUUM_VALVE_HOME_ON_BOOT: return cmdStr + strlen(CMD_STR_VACUUM_VALVE_HOME_ON_BOOT);
+        case CMD_PINCH_VALVE_HOME:    return cmdStr + strlen(CMD_STR_PINCH_VALVE_HOME);
+        case CMD_PINCH_VALVE_OPEN:    return cmdStr + strlen(CMD_STR_PINCH_VALVE_OPEN);
+        case CMD_PINCH_VALVE_CLOSE:   return cmdStr + strlen(CMD_STR_PINCH_VALVE_CLOSE);
+        case CMD_PINCH_VALVE_JOG:     return cmdStr + strlen(CMD_STR_PINCH_VALVE_JOG);
+        case CMD_PINCH_VALVE_HOME_ON_BOOT: return cmdStr + strlen(CMD_STR_PINCH_VALVE_HOME_ON_BOOT);
+        case CMD_SET_VALVE_PINCH_TORQUE: return cmdStr + strlen(CMD_STR_SET_VALVE_PINCH_TORQUE);
+        case CMD_SET_VALVE_PINCH_STROKE: return cmdStr + strlen(CMD_STR_SET_VALVE_PINCH_STROKE);
         case CMD_SET_HEATER_GAINS:    return cmdStr + strlen(CMD_STR_SET_HEATER_GAINS);
         case CMD_SET_HEATER_SETPOINT: return cmdStr + strlen(CMD_STR_SET_HEATER_SETPOINT);
         case CMD_SET_VACUUM_TARGET:   return cmdStr + strlen(CMD_STR_SET_VACUUM_TARGET);

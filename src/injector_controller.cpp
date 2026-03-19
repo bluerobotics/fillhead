@@ -128,7 +128,6 @@ Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controlle
     fullyResetActiveDispenseOperation();
     fullyResetActiveMove();
     m_activeFeedCommand = nullptr;
-    m_activeJogCommand = nullptr;
     m_activeMoveCommand = nullptr;
 }
 
@@ -191,6 +190,8 @@ void Injector::setup() {
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_INJ_VALVE_HOME_ON_BOOT), 1);
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_VAC_VALVE_HOME_ON_BOOT), 1);
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_CARTRIDGE_ML_PER_MM), (int32_t)(DEFAULT_CARTRIDGE_ML_PER_MM * 10000.0f));
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_TORQUE), (int32_t)(PINCH_VALVE_PINCH_TORQUE_PERCENT * 100.0f));
+        nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_PINCH_STROKE), (int32_t)(PINCH_VALVE_PINCH_STROKE_MM * 100.0f));
 
         nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(7 * 4), NVM_MAGIC_NUMBER);
     }
@@ -566,7 +567,7 @@ void Injector::updateState() {
                 // --- SET ZERO ---
                 case SET_ZERO: {
                     const char* commandStr = (m_homingState == HOMING_MACHINE)
-                                              ? CMD_STR_MACHINE_HOME_MOVE : CMD_STR_CARTRIDGE_HOME_MOVE;
+                                              ? CMD_STR_MACHINE_HOME : CMD_STR_CARTRIDGE_HOME;
 
                     if (m_homingState == HOMING_MACHINE) {
                         m_machineHomeReferenceSteps = m_motorA->PositionRefCommanded();
@@ -688,27 +689,6 @@ void Injector::updateState() {
                     if (m_active_op_remaining_steps < 0) m_active_op_remaining_steps = 0;
                 }
                 reportEvent(STATUS_PREFIX_INFO, "Feed Op: Operation Paused. Waiting for Resume/Cancel.");
-            }
-            break;
-        }
-
-        // ==================================================================
-        // JOGGING — Manual jog moves (preserved from original Fillhead)
-        // ==================================================================
-        case STATE_JOGGING: {
-            if (checkTorqueLimit()) {
-                abortMove();
-                reportEvent(STATUS_PREFIX_INFO, "JOG: Torque limit. Move stopped.");
-                m_state = STATE_STANDBY;
-                if (m_activeJogCommand) m_activeJogCommand = nullptr;
-            } else if (!isMoving()) {
-                if (m_activeJogCommand) {
-                    char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
-                    std::snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeJogCommand);
-                    reportEvent(STATUS_PREFIX_DONE, doneMsg);
-                    m_activeJogCommand = nullptr;
-                }
-                m_state = STATE_STANDBY;
             }
             break;
         }
@@ -858,7 +838,7 @@ void Injector::handleCommand(Command cmd, const char* args) {
 
     // Block new motion commands while busy
     if (m_state != STATE_STANDBY &&
-        (cmd == CMD_JOG_MOVE || cmd == CMD_MACHINE_HOME_MOVE || cmd == CMD_CARTRIDGE_HOME_MOVE ||
+        (cmd == CMD_MACHINE_HOME || cmd == CMD_CARTRIDGE_HOME ||
          cmd == CMD_INJECT ||
          cmd == CMD_HOME || cmd == CMD_MOVE_ABS || cmd == CMD_MOVE_INC || cmd == CMD_RETRACT ||
          cmd == CMD_MOVE_TO_CARTRIDGE_HOME || cmd == CMD_MOVE_TO_CARTRIDGE_RETRACT)) {
@@ -868,9 +848,8 @@ void Injector::handleCommand(Command cmd, const char* args) {
 
     switch (cmd) {
         // --- Existing Fillhead Injection Commands ---
-        case CMD_JOG_MOVE:                  jogMove(args); break;
-        case CMD_MACHINE_HOME_MOVE:         machineHome(); break;
-        case CMD_CARTRIDGE_HOME_MOVE:       cartridgeHome(); break;
+        case CMD_MACHINE_HOME:              machineHome(); break;
+        case CMD_CARTRIDGE_HOME:            cartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_HOME:    moveToCartridgeHome(); break;
         case CMD_MOVE_TO_CARTRIDGE_RETRACT: moveToCartridgeRetract(args); break;
         case CMD_INJECT:
@@ -1048,7 +1027,7 @@ void Injector::machineHome() {
     m_forceLimitTriggered = false;
     m_jouleIntegrationActive = false;
 
-    reportEvent(STATUS_PREFIX_START, "MACHINE_HOME_MOVE initiated (gantry squaring mode).");
+    reportEvent(STATUS_PREFIX_START, "MACHINE_HOME initiated (gantry squaring mode).");
 }
 
 void Injector::cartridgeHome() {
@@ -1663,36 +1642,6 @@ void Injector::cancelGeneralMove() {
     } else {
         reportEvent(STATUS_PREFIX_INFO, "No active operation to cancel.");
         reportEvent(STATUS_PREFIX_DONE, "cancel");
-    }
-}
-
-//==================================================================================================
-// --- Jog Move ---
-//==================================================================================================
-
-void Injector::jogMove(const char* args) {
-    float dist_mm1 = 0, dist_mm2 = 0, vel_mms = 0, accel_mms2 = 0;
-    int torque_percent = 0;
-
-    int parsed_count = std::sscanf(args, "%f %f %f %f %d", &dist_mm1, &dist_mm2, &vel_mms, &accel_mms2, &torque_percent);
-
-    if (parsed_count == 5) {
-        if (torque_percent <= 0 || torque_percent > 100) torque_percent = JOG_DEFAULT_TORQUE_PERCENT;
-        if (vel_mms <= 0) vel_mms = JOG_DEFAULT_VEL_MMS;
-        if (accel_mms2 <= 0) accel_mms2 = JOG_DEFAULT_ACCEL_MMSS;
-
-        long steps1 = (long)(dist_mm1 * STEPS_PER_MM_INJECTOR);
-        int velocity_sps = (int)(vel_mms * STEPS_PER_MM_INJECTOR);
-        int accel_sps2_val = (int)(accel_mms2 * STEPS_PER_MM_INJECTOR);
-
-        m_activeJogCommand = CMD_STR_JOG_MOVE;
-        m_state = STATE_JOGGING;
-        m_torqueLimit = (float)torque_percent;
-        startMove(steps1, velocity_sps, accel_sps2_val);
-    } else {
-        char errorMsg[STATUS_MESSAGE_BUFFER_SIZE];
-        std::snprintf(errorMsg, sizeof(errorMsg), "Invalid JOG_MOVE format. Expected 5 params, got %d.", parsed_count);
-        reportEvent(STATUS_PREFIX_ERROR, errorMsg);
     }
 }
 
@@ -2325,7 +2274,6 @@ const char* Injector::getState() const {
     switch (m_state) {
         case STATE_STANDBY:     return "Standby";
         case STATE_HOMING:      return "Homing";
-        case STATE_JOGGING:     return "Jogging";
         case STATE_FEEDING:     return "Feeding";
         case STATE_MOVING:      return "Moving";
         case STATE_MOTOR_FAULT: return "Fault";

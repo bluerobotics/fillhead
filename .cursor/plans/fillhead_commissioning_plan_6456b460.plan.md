@@ -34,8 +34,8 @@ All commands below are sent via the BR Equipment Control App (UDP) or USB serial
 
 ## Phase 1 -- Pre-Power Checks (no power)
 
-- Verify all motor connectors are seated (M0/M1 injectors, M2 vacuum valve, M3 injection valve).
-- Verify sensor wiring: thermocouple (A12), vacuum transducer (A11), injection valve hall sensor (A9), injector home sensors (DI7/M0, DI6/M1), vacuum valve home sensor (DI8).
+- Verify all motor connectors are seated (M0/M1 injectors, M2 injection valve, M3 vacuum valve).
+- Verify sensor wiring: thermocouple (A12), vacuum transducer (A11), injection valve hall sensor (DI8), injector home sensors (DI7/M0, DI6/M1), vacuum valve hall sensor (A9).
 - Verify relay wiring: heater (IO1), vacuum pump (IO0), vacuum solenoid (IO5).
 - Verify light curtain wiring (IO4) -- confirm it is connected and unobstructed.
 - Verify Ethernet cable or USB cable is connected to host PC.
@@ -48,9 +48,9 @@ All commands below are sent via the BR Equipment Control App (UDP) or USB serial
 
 1. Apply power to the ClearCore.
 2. Open the BR Equipment Control App and confirm `discover_device` succeeds -- the app should find the fillhead on port 8888.
-3. Check the telemetry stream is active -- verify `fillhead_main_state_var` reports. On first boot with no NVM magic set, expect `STATE_DISABLED` or `STATE_STANDBY`.
+3. Check the telemetry stream is active -- verify `fillhead_state` reports. On first boot, expect `STATE_STANDBY` (or `STATE_RECOVERED` if a watchdog reset occurred).
 4. Run `dump_nvm` to inspect current NVM contents. If this is a fresh board, run `reset_nvm` to load factory defaults.
-5. Send `enable` to power on all motors. Confirm state transitions to `STATE_STANDBY`.
+5. Send `enable`. On a normal first boot the system is already in `STATE_STANDBY` and will respond "System already enabled." If the system is in `STATE_DISABLED`, it will transition to `STATE_STANDBY` and enable all motors.
 
 ---
 
@@ -65,7 +65,7 @@ All commands below are sent via the BR Equipment Control App (UDP) or USB serial
 
 ### 3b. Watchdog
 
-1. Send `test_watchdog`. This blocks the loop for 1 second, triggering the 256 ms watchdog.
+1. Send `test_watchdog`. This enters an infinite loop, triggering the 256 ms watchdog timeout and causing a system reset.
 2. Confirm the system reboots and enters `STATE_RECOVERED`.
 3. Send `reset`. Confirm return to `STATE_STANDBY`.
 
@@ -86,16 +86,16 @@ All commands below are sent via the BR Equipment Control App (UDP) or USB serial
 4. Send `move_abs 50 5 500 skip` -- move to 50 mm at 5 mm/s, 500 kg force limit (skip action). Confirm arrival.
 5. Send `move_abs 0 5 500 skip` -- return to zero.
 
-### 4b. Injection Valve (M3)
+### 4b. Injection Valve (M2)
 
-1. Send `injection_valve_home`. Confirm homing completes using A9 hall sensor, state goes to `open`.
+1. Send `injection_valve_home`. Confirm homing completes using DI8 hall sensor, state goes to `open`.
 2. Send `injection_valve_close`. Confirm valve state transitions to `closed`.
 3. Send `injection_valve_open`. Confirm valve state transitions to `open`.
 4. Send `injection_valve_jog 2` then `injection_valve_jog -2` to verify manual control.
 
-### 4c. Vacuum Valve (M2)
+### 4c. Vacuum Valve (M3)
 
-1. Send `vacuum_valve_home`. Confirm homing completes using DI8 hall sensor, state goes to `open`.
+1. Send `vacuum_valve_home`. Confirm homing completes using A9 hall sensor, state goes to `open`.
 2. Send `vacuum_valve_close`. Confirm state transitions to `closed`.
 3. Send `vacuum_valve_open`. Confirm state transitions to `open`.
 4. Send `vacuum_valve_jog 2` then `vacuum_valve_jog -2` to verify manual control.
@@ -127,7 +127,7 @@ All commands below are sent via the BR Equipment Control App (UDP) or USB serial
 
 1. **Force sensor tare**: With no load, send `set_force_zero`.
 2. **Vacuum offset**: If the transducer reads non-zero at atmosphere, note the offset. The firmware has `VACUUM_PSIG_OFFSET` for compensation.
-3. **Cartridge ratio**: Confirm `set_cartridge_ml_per_mm` is set correctly for your cartridge (default 5.2732 ml/mm). Adjust if using a different cartridge size.
+3. **Cartridge ratio**: Confirm `set_cartridge_ml_per_mm` is set correctly for your cartridge (default 5.2732 ml/mm). Adjust if using a different cartridge size, e.g. `set_cartridge_ml_per_mm 5.2732`.
 4. **Retract position**: Send `set_retract 10 25` to set a 10 mm retract position at 25 mm/s (adjust as needed for your setup).
 5. **Polarity**: Send `set_polarity normal` (or `inverted` if the machine is mounted upside-down).
 6. **Home-on-boot**: Once homing is verified, optionally enable with `home_on_boot true`, `injection_valve_home_on_boot true`, `vacuum_valve_home_on_boot true`.

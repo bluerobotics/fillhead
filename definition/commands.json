@@ -238,9 +238,13 @@
     "jog_move": {
         "device": "fillhead",
         "target": "device",
-        "description": "Jog the injector motors by a relative distance.",
+        "description": "Jog the injector motors by a relative distance. Use 0 for velocity, acceleration, or torque to apply defaults.",
         "params": [
-            { "parameter": "distance", "unit": "mm", "type": "float" }
+            { "parameter": "distance1", "unit": "mm", "type": "float", "help": "Primary axis travel distance." },
+            { "parameter": "distance2", "unit": "mm", "type": "float", "help": "Reserved second axis distance (currently unused)." },
+            { "parameter": "velocity", "unit": "mm/s", "type": "float", "help": "Jog velocity. 0 uses default." },
+            { "parameter": "acceleration", "unit": "mm/s^2", "type": "float", "help": "Jog acceleration. 0 uses default." },
+            { "parameter": "torque", "unit": "%", "type": "int", "help": "Torque limit 1-100%. 0 uses default." }
         ],
         "returns": ["done", "error"]
     },

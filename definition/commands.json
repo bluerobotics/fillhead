@@ -356,8 +356,10 @@
     "heater_on": {
         "device": "fillhead",
         "target": "device",
-        "description": "Turn the heater on. Uses the setpoint previously configured via set_heater_setpoint.",
-        "params": [],
+        "description": "Turn the heater on with an optional setpoint. If no setpoint is provided, uses the value previously configured via set_heater_setpoint.",
+        "params": [
+            { "parameter": "setpoint", "unit": "C", "type": "float", "optional": true, "help": "Target temperature in Celsius (20-200). If omitted, uses the existing setpoint." }
+        ],
         "returns": ["done", "error"]
     },
     "heater_off": {
@@ -387,11 +389,22 @@
         ],
         "returns": ["done", "error"]
     },
+    "set_fan_threshold": {
+        "device": "fillhead",
+        "target": "device",
+        "description": "Set the cooling fan activation temperature threshold and save to NVM. Fan turns on when hot end temperature reaches or exceeds this value.",
+        "params": [
+            { "parameter": "threshold", "unit": "C", "type": "float", "help": "Temperature in Celsius (0-200). Default 35.0" }
+        ],
+        "returns": ["done", "error"]
+    },
     "vacuum_on": {
         "device": "fillhead",
         "target": "device",
-        "description": "Turn the vacuum pump on. Uses the target previously configured via set_vacuum_target.",
-        "params": [],
+        "description": "Turn the vacuum pump on with an optional target pressure. If no target is provided, turns the pump on without pressure regulation.",
+        "params": [
+            { "parameter": "target", "unit": "psi", "type": "float", "optional": true, "help": "Target pressure in PSIG (0 to -15). If omitted, pump runs without regulation." }
+        ],
         "returns": ["done", "error"]
     },
     "vacuum_off": {

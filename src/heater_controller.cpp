@@ -10,8 +10,11 @@
  */
 #include "heater_controller.h"
 #include "fillhead.h"
+#include "NvmManager.h"
 #include <stdio.h>
 #include <stdlib.h>
+
+using ClearCore::NvmManager;
 
 HeaterController::HeaterController(Fillhead* controller) {
 	m_controller = controller;
@@ -26,12 +29,24 @@ HeaterController::HeaterController(Fillhead* controller) {
 	m_pid_ki = DEFAULT_HEATER_KI;
 	m_pid_kd = DEFAULT_HEATER_KD;
 	resetPID();
+
+	m_fanThresholdCelsius = DEFAULT_COOLING_FAN_THRESHOLD_C;
+	m_fanActive = false;
 }
 
 void HeaterController::setup() {
 	PIN_THERMOCOUPLE.Mode(Connector::INPUT_ANALOG);
 	PIN_HEATER_RELAY.Mode(Connector::OUTPUT_DIGITAL);
 	PIN_HEATER_RELAY.State(false); // Ensure heater is off on startup
+
+	PIN_COOLING_FAN.Mode(Connector::OUTPUT_DIGITAL);
+	PIN_COOLING_FAN.State(false);
+
+	NvmManager &nvmMgr = NvmManager::Instance();
+	int32_t rawThreshold = nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_COOLING_FAN_THRESHOLD));
+	if (rawThreshold > 0) {
+		m_fanThresholdCelsius = (float)rawThreshold / 100.0f;
+	}
 }
 
 /**
@@ -51,6 +66,9 @@ void HeaterController::handleCommand(Command cmd, const char* args) {
 		break;
 	case CMD_SET_HEATER_SETPOINT:
 		setSetpoint(args);
+		break;
+	case CMD_SET_FAN_THRESHOLD:
+		setFanThreshold(args);
 		break;
 	default:
 		// This command was not for us
@@ -135,6 +153,8 @@ void HeaterController::updateTemperature() {
 }
 
 void HeaterController::updateState() {
+	updateCoolingFan();
+
 	if (m_heaterState != HEATER_PID_ACTIVE) {
 		// If PID is not active, ensure the output is zero and the relay is off.
 		if (m_pid_output != 0.0f) {
@@ -174,6 +194,33 @@ void HeaterController::updateState() {
 	PIN_HEATER_RELAY.State((now % PID_PWM_PERIOD_MS) < on_duration_ms);
 }
 
+void HeaterController::updateCoolingFan() {
+	bool shouldRun;
+	if (m_fanActive) {
+		shouldRun = m_temperatureCelsius >= (m_fanThresholdCelsius - COOLING_FAN_HYSTERESIS_C);
+	} else {
+		shouldRun = m_temperatureCelsius >= m_fanThresholdCelsius;
+	}
+	if (shouldRun != m_fanActive) {
+		m_fanActive = shouldRun;
+		PIN_COOLING_FAN.State(m_fanActive);
+	}
+}
+
+void HeaterController::setFanThreshold(const char* args) {
+	float val = 0.0f;
+	if (args && sscanf(args, "%f", &val) == 1 && val >= 0.0f && val <= 200.0f) {
+		m_fanThresholdCelsius = val;
+		NvmManager &nvmMgr = NvmManager::Instance();
+		nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_COOLING_FAN_THRESHOLD), (int32_t)(val * 100.0f));
+		char response[STATUS_MESSAGE_BUFFER_SIZE];
+		snprintf(response, sizeof(response), "Fan threshold set to %.1f C and saved to NVM.", val);
+		reportEvent(STATUS_PREFIX_DONE, response);
+	} else {
+		reportEvent(STATUS_PREFIX_ERROR, "Invalid fan threshold. Must be between 0 and 200 C.");
+	}
+}
+
 void HeaterController::resetPID() {
 	m_pid_integral = 0.0f;
 	m_pid_last_error = 0.0f;
@@ -189,8 +236,9 @@ void HeaterController::reportEvent(const char* statusType, const char* message) 
 
 const char* HeaterController::getTelemetryString() {
 	snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
-	"h_st:%d,h_sp:%.1f,h_pv:%.1f,h_op:%.1f",
-	(int)m_heaterState, m_pid_setpoint, m_temperatureCelsius, m_pid_output);
+	"h_st:%d,h_sp:%.1f,h_pv:%.1f,h_op:%.1f,fan:%d,fan_thr:%.1f",
+	(int)m_heaterState, m_pid_setpoint, m_temperatureCelsius, m_pid_output,
+	(int)m_fanActive, m_fanThresholdCelsius);
 	return m_telemetryBuffer;
 }
 

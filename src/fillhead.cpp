@@ -681,6 +681,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_HEATER_OFF:
         case CMD_SET_HEATER_GAINS:
         case CMD_SET_HEATER_SETPOINT:
+        case CMD_SET_FAN_THRESHOLD:
             m_heater.handleCommand(command_enum, args);
             break;
 
@@ -1011,16 +1012,21 @@ void Fillhead::dispatchCommand(const Message& msg) {
                      pinchTorque, pinchStroke);
             sendMessage(nvm_buf);
 
+            int32_t rawFanThr = nvmMgrValve.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_COOLING_FAN_THRESHOLD));
+            float fanThr = (rawFanThr > 0) ? (float)rawFanThr / 100.0f : DEFAULT_COOLING_FAN_THRESHOLD_C;
+            snprintf(nvm_buf, sizeof(nvm_buf), "NVMDUMP:fillhead:SUMMARY: CoolingFanThreshold=%.1fC", fanThr);
+            sendMessage(nvm_buf);
+
             reportEvent(STATUS_PREFIX_DONE, "dump_nvm");
             break;
         }
 
         case CMD_RESET_NVM: {
             NvmManager &nvmMgr = NvmManager::Instance();
-            for (int i = 0; i <= 20; ++i) {
+            for (int i = 0; i <= 21; ++i) {
                 nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(i * 4), -1);
             }
-            reportEvent(STATUS_PREFIX_INFO, "All NVM locations (slots 0-20) reset to erased state. Reboot required.");
+            reportEvent(STATUS_PREFIX_INFO, "All NVM locations (slots 0-21) reset to erased state. Reboot required.");
             reportEvent(STATUS_PREFIX_DONE, "reset_nvm");
             break;
         }

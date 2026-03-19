@@ -90,6 +90,7 @@
 #define CMD_STR_HEATER_OFF                  "heater_off"
 #define CMD_STR_SET_HEATER_GAINS            "set_heater_gains "
 #define CMD_STR_SET_HEATER_SETPOINT         "set_heater_setpoint "
+#define CMD_STR_SET_FAN_THRESHOLD           "set_fan_threshold "
 /** @} */
 
 /**
@@ -169,6 +170,7 @@ typedef enum {
     CMD_HEATER_OFF,
     CMD_SET_HEATER_GAINS,
     CMD_SET_HEATER_SETPOINT,
+    CMD_SET_FAN_THRESHOLD,
 
     // Vacuum Commands
     CMD_VACUUM_ON,

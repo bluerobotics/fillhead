@@ -37,6 +37,7 @@ Command parseCommand(const char* cmdStr) {
     if (strncmp(cmdStr, CMD_STR_SET_VALVE_PINCH_STROKE, strlen(CMD_STR_SET_VALVE_PINCH_STROKE)) == 0) return CMD_SET_VALVE_PINCH_STROKE;
 
     // Heater commands
+    if (strncmp(cmdStr, CMD_STR_SET_FAN_THRESHOLD, strlen(CMD_STR_SET_FAN_THRESHOLD)) == 0) return CMD_SET_FAN_THRESHOLD;
     if (strncmp(cmdStr, CMD_STR_SET_HEATER_SETPOINT, strlen(CMD_STR_SET_HEATER_SETPOINT)) == 0) return CMD_SET_HEATER_SETPOINT;
     if (strncmp(cmdStr, CMD_STR_SET_HEATER_GAINS, strlen(CMD_STR_SET_HEATER_GAINS)) == 0) return CMD_SET_HEATER_GAINS;
     if (strncmp(cmdStr, CMD_STR_HEATER_ON, strlen(CMD_STR_HEATER_ON)) == 0) return CMD_HEATER_ON;
@@ -103,6 +104,7 @@ const char* getCommandParams(const char* cmdStr, Command cmd) {
         case CMD_SET_VALVE_PINCH_STROKE: return cmdStr + strlen(CMD_STR_SET_VALVE_PINCH_STROKE);
         case CMD_SET_HEATER_GAINS:    return cmdStr + strlen(CMD_STR_SET_HEATER_GAINS);
         case CMD_SET_HEATER_SETPOINT: return cmdStr + strlen(CMD_STR_SET_HEATER_SETPOINT);
+        case CMD_SET_FAN_THRESHOLD:   return cmdStr + strlen(CMD_STR_SET_FAN_THRESHOLD);
         case CMD_SET_VACUUM_TARGET:   return cmdStr + strlen(CMD_STR_SET_VACUUM_TARGET);
         case CMD_SET_VACUUM_TIMEOUT_S: return cmdStr + strlen(CMD_STR_SET_VACUUM_TIMEOUT_S);
         case CMD_SET_LEAK_TEST_DELTA: return cmdStr + strlen(CMD_STR_SET_LEAK_TEST_DELTA);

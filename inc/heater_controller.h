@@ -104,7 +104,23 @@ private:
 	float m_pid_last_error;             ///< The previous error value used for the derivative term calculation.
 	uint32_t m_pid_last_time;           ///< Timestamp of the last PID update, used to calculate delta time.
 	float m_pid_output;                 ///< The output of the PID calculation, representing a duty cycle (0-100).
+	float m_fanThresholdCelsius;        ///< Temperature threshold (C) above which the cooling fan activates.
+	bool m_fanActive;                   ///< Current state of the cooling fan output.
 	char m_telemetryBuffer[256];        ///< A buffer to store the formatted telemetry string.
+
+	/**
+	 * @brief Updates the cooling fan output based on the current temperature.
+	 * @details Uses Schmitt hysteresis: fan turns on when temperature >= threshold,
+	 * and turns off only when temperature falls below threshold - COOLING_FAN_HYSTERESIS_C (1°C).
+	 * Runs independently of heater PID state.
+	 */
+	void updateCoolingFan();
+
+	/**
+	 * @brief Sets the cooling fan activation threshold from a string argument.
+	 * @param args A C-style string containing the new threshold in Celsius.
+	 */
+	void setFanThreshold(const char* args);
 
 	/**
 	 * @brief Resets the PID controller's state variables.

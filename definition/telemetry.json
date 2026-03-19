@@ -277,6 +277,26 @@
         "help": "Heater PID controller output percentage",
         "gui_var": "fillhead_heater_output_var"
     },
+    "cooling_fan": {
+        "type": "int",
+        "default": 0,
+        "firmware_key": "fan",
+        "map": {
+            "0": "off",
+            "1": "on"
+        },
+        "help": "Hot end cooling fan state",
+        "gui_var": "fillhead_cooling_fan_var"
+    },
+    "cooling_fan_threshold": {
+        "unit": "C",
+        "type": "float",
+        "default": 35.0,
+        "precision": 1,
+        "firmware_key": "fan_thr",
+        "help": "Temperature threshold above which the cooling fan activates",
+        "gui_var": "fillhead_cooling_fan_threshold_var"
+    },
     "vacuum_psig": {
         "unit": "PSIG",
         "type": "float",

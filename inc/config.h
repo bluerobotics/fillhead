@@ -143,6 +143,7 @@
 
 // --- Digital Outputs (Relays) ---
 #define PIN_HEATER_RELAY                ConnectorIO1 ///< Digital output to control the heater relay.
+#define PIN_COOLING_FAN                 ConnectorIO2 ///< Digital output to control the hot end cooling fan.
 #define PIN_VACUUM_RELAY                ConnectorIO0 ///< Digital output to control the vacuum pump relay.
 #define PIN_VACUUM_VALVE_RELAY          ConnectorIO5 ///< Digital output to control the vacuum solenoid valve relay.
 
@@ -186,6 +187,8 @@
 #define DEFAULT_HEATER_KP               60.0f     ///< Default Proportional (P) gain for the PID controller.
 #define DEFAULT_HEATER_KI               2.5f      ///< Default Integral (I) gain for the PID controller.
 #define DEFAULT_HEATER_KD               40.0f     ///< Default Derivative (D) gain for the PID controller.
+#define DEFAULT_COOLING_FAN_THRESHOLD_C 35.0f     ///< Default temperature (C) above which the hot end cooling fan activates.
+#define COOLING_FAN_HYSTERESIS_C        1.0f      ///< Hysteresis (C): fan turns off when temp drops this much below threshold.
 /** @} */
 
 /**
@@ -300,6 +303,7 @@
 #define NVM_SLOT_CARTRIDGE_ML_PER_MM            (18 * 4) ///< NVM byte offset for cartridge ml_per_mm (stored as int * 10000).
 #define NVM_SLOT_PINCH_TORQUE                   (19 * 4) ///< NVM byte offset for shared pinch valve close torque (stored as int * 100).
 #define NVM_SLOT_PINCH_STROKE                   (20 * 4) ///< NVM byte offset for shared pinch valve close stroke (stored as int * 100).
+#define NVM_SLOT_COOLING_FAN_THRESHOLD          (21 * 4) ///< NVM byte offset for cooling fan temperature threshold (stored as int * 100).
 /** @} */
 
 /**

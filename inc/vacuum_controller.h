@@ -26,9 +26,8 @@ enum VacuumState : uint8_t {
 	VACUUM_PULLDOWN,        ///< 1 — The pump is on, pulling down to the target pressure for a leak test.
 	VACUUM_SETTLING,        ///< 2 — The pump is off, allowing pressure to stabilize before a leak test.
 	VACUUM_LEAK_TESTING,    ///< 3 — The system is holding vacuum and monitoring for pressure changes to detect leaks.
-	VACUUM_ON,              ///< 4 — The pump is on and will run continuously until a `VACUUM_OFF` command is received.
-	VACUUM_RAMP,            ///< 5 — The pump is on, ramping to a user-specified target pressure, then auto-off.
-	VACUUM_ERROR            ///< 6 — The system failed to reach target pressure or failed a leak test.
+	VACUUM_ON,              ///< 4 — The pump is on until `VACUUM_OFF`. With a target, actively regulates at setpoint.
+	VACUUM_ERROR            ///< 5 — The system failed to reach target pressure or failed a leak test.
 };
 
 /**
@@ -119,7 +118,8 @@ class VacuumController {
 	float m_smoothedVacuumPsig;         ///< The smoothed (EWMA) vacuum pressure in PSIG.
 	bool m_firstVacuumReading;          ///< Flag to handle the first reading for the smoothing filter.
 	float m_targetPsig;                 ///< The target vacuum pressure for pulldown and hold states in PSIG.
-	float m_rampTimeoutSec;             ///< The timeout in seconds for reaching the target pressure during pulldown.
+	bool m_regulateEnabled;             ///< When true, VACUUM_ON actively cycles the pump relay to hold the target pressure.
+	float m_pulldownTimeoutSec;         ///< The timeout in seconds for reaching the target pressure during pulldown.
 	float m_leakTestDeltaPsig;          ///< The maximum allowed pressure increase (less negative) during a leak test in PSIG.
 	float m_leakTestDurationSec;        ///< The duration of the leak test in seconds.
 	uint32_t m_stateStartTimeMs;        ///< Timestamp (in milliseconds) when the current state was entered.
@@ -127,7 +127,7 @@ class VacuumController {
 	char m_telemetryBuffer[256];        ///< A buffer to store the formatted telemetry string.
 
 	/**
-	 * @brief Activates the vacuum pump relay, optionally ramping to a target pressure.
+	 * @brief Activates the vacuum pump relay, optionally regulating to a target pressure.
 	 * @param args Optional target pressure in PSIG. If NULL/empty, pump runs indefinitely.
 	 */
 	void vacuumOn(const char* args);

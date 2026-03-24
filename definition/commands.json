@@ -414,10 +414,10 @@
         "params": [],
         "returns": ["passed", "failed"]
     },
-    "set_vacuum_target": {
+    "set_leak_test_target": {
         "device": "fillhead",
         "target": "device",
-        "description": "Set the vacuum target pressure and save to NVM.",
+        "description": "Set the leak test target pressure and save to NVM.",
         "params": [
             { "parameter": "target", "unit": "psi", "type": "float" }
         ],

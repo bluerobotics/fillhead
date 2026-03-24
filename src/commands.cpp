@@ -45,7 +45,7 @@ Command parseCommand(const char* cmdStr) {
 
     // Vacuum system commands (longer first)
     if (strncmp(cmdStr, CMD_STR_SET_VACUUM_TIMEOUT_S, strlen(CMD_STR_SET_VACUUM_TIMEOUT_S)) == 0) return CMD_SET_VACUUM_TIMEOUT_S;
-    if (strncmp(cmdStr, CMD_STR_SET_VACUUM_TARGET, strlen(CMD_STR_SET_VACUUM_TARGET)) == 0) return CMD_SET_VACUUM_TARGET;
+    if (strncmp(cmdStr, CMD_STR_SET_LEAK_TEST_TARGET, strlen(CMD_STR_SET_LEAK_TEST_TARGET)) == 0) return CMD_SET_LEAK_TEST_TARGET;
     if (strncmp(cmdStr, CMD_STR_SET_LEAK_TEST_DURATION_S, strlen(CMD_STR_SET_LEAK_TEST_DURATION_S)) == 0) return CMD_SET_LEAK_TEST_DURATION_S;
     if (strncmp(cmdStr, CMD_STR_SET_LEAK_TEST_DELTA, strlen(CMD_STR_SET_LEAK_TEST_DELTA)) == 0) return CMD_SET_LEAK_TEST_DELTA;
     if (strncmp(cmdStr, CMD_STR_VACUUM_LEAK_TEST, strlen(CMD_STR_VACUUM_LEAK_TEST)) == 0) return CMD_VACUUM_LEAK_TEST;
@@ -104,7 +104,7 @@ const char* getCommandParams(const char* cmdStr, Command cmd) {
         case CMD_SET_HEATER_GAINS:    return cmdStr + strlen(CMD_STR_SET_HEATER_GAINS);
         case CMD_SET_HEATER_SETPOINT: return cmdStr + strlen(CMD_STR_SET_HEATER_SETPOINT);
         case CMD_SET_FAN_THRESHOLD:   return cmdStr + strlen(CMD_STR_SET_FAN_THRESHOLD);
-        case CMD_SET_VACUUM_TARGET:   return cmdStr + strlen(CMD_STR_SET_VACUUM_TARGET);
+        case CMD_SET_LEAK_TEST_TARGET: return cmdStr + strlen(CMD_STR_SET_LEAK_TEST_TARGET);
         case CMD_SET_VACUUM_TIMEOUT_S: return cmdStr + strlen(CMD_STR_SET_VACUUM_TIMEOUT_S);
         case CMD_SET_LEAK_TEST_DELTA: return cmdStr + strlen(CMD_STR_SET_LEAK_TEST_DELTA);
         case CMD_SET_LEAK_TEST_DURATION_S: return cmdStr + strlen(CMD_STR_SET_LEAK_TEST_DURATION_S);

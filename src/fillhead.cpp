@@ -688,7 +688,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
         case CMD_VACUUM_ON:
         case CMD_VACUUM_OFF:
         case CMD_VACUUM_LEAK_TEST:
-        case CMD_SET_VACUUM_TARGET:
+        case CMD_SET_LEAK_TEST_TARGET:
         case CMD_SET_VACUUM_TIMEOUT_S:
         case CMD_SET_LEAK_TEST_DELTA:
         case CMD_SET_LEAK_TEST_DURATION_S:

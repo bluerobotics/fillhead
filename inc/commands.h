@@ -99,7 +99,7 @@
 #define CMD_STR_VACUUM_ON                   "vacuum_on"
 #define CMD_STR_VACUUM_OFF                  "vacuum_off"
 #define CMD_STR_VACUUM_LEAK_TEST            "vacuum_leak_test"
-#define CMD_STR_SET_VACUUM_TARGET           "set_vacuum_target "
+#define CMD_STR_SET_LEAK_TEST_TARGET        "set_leak_test_target "
 #define CMD_STR_SET_VACUUM_TIMEOUT_S        "set_vacuum_timeout_s "
 #define CMD_STR_SET_LEAK_TEST_DELTA         "set_leak_test_delta "
 #define CMD_STR_SET_LEAK_TEST_DURATION_S    "set_leak_test_duration_s "
@@ -174,7 +174,7 @@ typedef enum {
     CMD_VACUUM_ON,
     CMD_VACUUM_OFF,
     CMD_VACUUM_LEAK_TEST,
-    CMD_SET_VACUUM_TARGET,
+    CMD_SET_LEAK_TEST_TARGET,
     CMD_SET_VACUUM_TIMEOUT_S,
     CMD_SET_LEAK_TEST_DELTA,
     CMD_SET_LEAK_TEST_DURATION_S

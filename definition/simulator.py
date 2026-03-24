@@ -226,7 +226,7 @@ def handle_command(device_sim, command, args, gui_address):
             (simulate_leak_test, (device_sim, 3.0, gui_address, command)))
         return True
 
-    elif cmd_lower == "set_vacuum_target":
+    elif cmd_lower == "set_leak_test_target":
         if args:
             device_sim.state['vac_tgt'] = float(args[0])
         return False

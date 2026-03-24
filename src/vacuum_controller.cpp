@@ -23,9 +23,11 @@ VacuumController::VacuumController(Fillhead* controller) {
 	m_stateStartTimeMs = 0;
 	m_leakTestStartPressure = 0.0f;
 
+	m_regulateEnabled = false;
+
 	// Initialize parameters with default values from config, converting MS to S
 	m_targetPsig = DEFAULT_VACUUM_TARGET_PSIG;
-	m_rampTimeoutSec = (float)DEFAULT_VACUUM_RAMP_TIMEOUT_MS / 1000.0f;
+	m_pulldownTimeoutSec = (float)DEFAULT_VACUUM_PULLDOWN_TIMEOUT_MS / 1000.0f;
 	m_leakTestDeltaPsig = DEFAULT_LEAK_TEST_DELTA_PSIG;
 	m_leakTestDurationSec = (float)DEFAULT_LEAK_TEST_DURATION_MS / 1000.0f;
 }
@@ -57,7 +59,7 @@ void VacuumController::handleCommand(Command cmd, const char* args) {
 		case CMD_VACUUM_ON:                 vacuumOn(args); break;
 		case CMD_VACUUM_OFF:                vacuumOff(); break;
 		case CMD_VACUUM_LEAK_TEST:          leakTest(args); break;
-		case CMD_SET_VACUUM_TARGET:         setTarget(args); break;
+		case CMD_SET_LEAK_TEST_TARGET:      setTarget(args); break;
 		case CMD_SET_VACUUM_TIMEOUT_S:      setTimeout(args); break;
 		case CMD_SET_LEAK_TEST_DELTA:       setLeakDelta(args); break;
 		case CMD_SET_LEAK_TEST_DURATION_S:  setLeakDuration(args); break;
@@ -72,21 +74,22 @@ void VacuumController::vacuumOn(const char* args) {
 		float target = std::atof(args);
 		if (target <= 0.0f && target > -15.0f) {
 			m_targetPsig = target;
-			char msg[STATUS_MESSAGE_BUFFER_SIZE];
-			snprintf(msg, sizeof(msg), "vacuum_on received with target=%.2f PSIG. Ramping...", target);
-			reportEvent(STATUS_PREFIX_START, msg);
-			m_state = VACUUM_RAMP;
-			m_stateStartTimeMs = Milliseconds();
+			m_regulateEnabled = true;
+			m_state = VACUUM_ON;
 			PIN_VACUUM_RELAY.State(true);
 			PIN_VACUUM_VALVE_RELAY.State(true);
+			char msg[STATUS_MESSAGE_BUFFER_SIZE];
+			snprintf(msg, sizeof(msg), "vacuum_on complete. Regulating to %.2f PSIG.", target);
+			reportEvent(STATUS_PREFIX_DONE, msg);
 		} else {
 			reportEvent(STATUS_PREFIX_ERROR, "Invalid vacuum target. Must be between 0 and -15 PSIG.");
 		}
 	} else {
-		reportEvent(STATUS_PREFIX_START, "VACUUM_ON received. Pump is now running.");
+		m_regulateEnabled = false;
 		m_state = VACUUM_ON;
 		PIN_VACUUM_RELAY.State(true);
 		PIN_VACUUM_VALVE_RELAY.State(true);
+		reportEvent(STATUS_PREFIX_DONE, "vacuum_on complete. Pump is now running.");
 	}
 }
 
@@ -100,6 +103,7 @@ void VacuumController::vacuumOff() {
 }
 
 void VacuumController::leakTest(const char* args) {
+	m_regulateEnabled = false;
 	float delta = m_leakTestDeltaPsig;
 	float duration = m_leakTestDurationSec;
 	if (args != NULL && args[0] != '\0') {
@@ -134,32 +138,31 @@ void VacuumController::leakTest(const char* args) {
 }
 
 void VacuumController::updateState() {
-	// These states are terminal or passive, no automatic transitions needed.
-	if (m_state == VACUUM_OFF || m_state == VACUUM_ON || m_state == VACUUM_ERROR) {
+	if (m_state == VACUUM_OFF || m_state == VACUUM_ERROR) {
+		return;
+	}
+
+	if (m_state == VACUUM_ON) {
+		if (m_regulateEnabled) {
+			if (m_vacuumPressurePsig <= m_targetPsig) {
+				PIN_VACUUM_RELAY.State(false);
+			} else if (m_vacuumPressurePsig > m_targetPsig + VACUUM_REGULATE_HYSTERESIS_PSIG) {
+				PIN_VACUUM_RELAY.State(true);
+			}
+		}
 		return;
 	}
 
 	float elapsed_sec = (float)(Milliseconds() - m_stateStartTimeMs) / 1000.0f;
 
-	if (m_state == VACUUM_RAMP) {
-		if (m_vacuumPressurePsig <= m_targetPsig) {
-			resetState();
-			reportEvent(STATUS_PREFIX_DONE, "vacuum_on complete. Target pressure reached.");
-		} else if (elapsed_sec > m_rampTimeoutSec) {
-			m_state = VACUUM_ERROR;
-			PIN_VACUUM_RELAY.State(false);
-			PIN_VACUUM_VALVE_RELAY.State(false);
-			reportEvent(STATUS_PREFIX_ERROR, "vacuum_on FAILED: Did not reach target pressure in time.");
-		}
-	}
-	else if (m_state == VACUUM_PULLDOWN) {
+	if (m_state == VACUUM_PULLDOWN) {
 		if (m_vacuumPressurePsig <= m_targetPsig) {
 			PIN_VACUUM_RELAY.State(false);      // Pump off
 			PIN_VACUUM_VALVE_RELAY.State(false);  // Close valve to seal system
 			reportEvent(STATUS_PREFIX_INFO, "Leak Test: Target reached. Pump off. Settling...");
 			m_state = VACUUM_SETTLING;
 			m_stateStartTimeMs = Milliseconds();
-		} else if (elapsed_sec > m_rampTimeoutSec) {
+		} else if (elapsed_sec > m_pulldownTimeoutSec) {
 		m_state = VACUUM_ERROR;
 		PIN_VACUUM_RELAY.State(false);
 		PIN_VACUUM_VALVE_RELAY.State(false);
@@ -194,6 +197,7 @@ void VacuumController::updateState() {
 
 void VacuumController::resetState() {
 	m_state = VACUUM_OFF;
+	m_regulateEnabled = false;
 	PIN_VACUUM_RELAY.State(false);
 	PIN_VACUUM_VALVE_RELAY.State(false);
 }
@@ -203,7 +207,7 @@ void VacuumController::setTarget(const char* args) {
 	if (val <= 0 && val > -15.0f) {
 		m_targetPsig = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "set_vacuum_target complete. Target=%.2f PSIG.", m_targetPsig);
+		snprintf(response, sizeof(response), "set_leak_test_target complete. Target=%.2f PSIG.", m_targetPsig);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid vacuum target. Must be between 0 and -15.");
@@ -213,9 +217,9 @@ void VacuumController::setTarget(const char* args) {
 void VacuumController::setTimeout(const char* args) {
 	float val = std::atof(args);
 	if (val >= 0.5f && val <= 60.0f) {
-		m_rampTimeoutSec = val;
+		m_pulldownTimeoutSec = val;
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "set_vacuum_timeout_s complete. Timeout=%.1f seconds.", m_rampTimeoutSec);
+		snprintf(response, sizeof(response), "set_vacuum_timeout_s complete. Timeout=%.1f seconds.", m_pulldownTimeoutSec);
 		reportEvent(STATUS_PREFIX_DONE, response);
 		} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid timeout. Must be between 0.5 and 60.0 seconds.");
@@ -283,11 +287,10 @@ bool VacuumController::isBusy() const {
 const char* VacuumController::getState() const {
 	switch (m_state) {
 		case VACUUM_OFF:            return "Off";
-		case VACUUM_RAMP:           return "Ramping";
 		case VACUUM_PULLDOWN:       return "Pulldown";
 		case VACUUM_SETTLING:       return "Settling";
 		case VACUUM_LEAK_TESTING:   return "Leak Test";
-		case VACUUM_ON:             return "On";
+		case VACUUM_ON:             return m_regulateEnabled ? "Regulating" : "On";
 		case VACUUM_ERROR:          return "Error";
 		default:                    return "Unknown";
 	}

@@ -170,9 +170,9 @@
  * @name Sensor and Control Loop Parameters
  * @{
  */
-#define SENSOR_SAMPLE_INTERVAL_MS       100       ///< How often (in ms) to sample temperature and vacuum sensors.
-#define EWMA_ALPHA_SENSORS              0.5f      ///< Smoothing factor (alpha) for the Exponentially Weighted Moving Average filter on sensor readings.
-#define EWMA_ALPHA_TORQUE               0.2f      ///< Smoothing factor (alpha) for the EWMA filter on motor torque readings.
+#define SENSOR_SAMPLE_INTERVAL_MS       10       ///< How often (in ms) to sample temperature and vacuum sensors.
+#define EWMA_ALPHA_SENSORS              0.05f      ///< Smoothing factor (alpha) for the Exponentially Weighted Moving Average filter on sensor readings.
+#define EWMA_ALPHA_TORQUE               0.2f      ///< Smoothing factor (alpha) for the EWMA filter on motor torque readings. called at telemetry interval.
 
 /**
  * @name Heater Control Defaults
@@ -222,7 +222,7 @@
 #define DEFAULT_LEAK_TEST_DELTA_PSIG    0.1f      ///< Default maximum allowed pressure drop during a leak test.
 #define DEFAULT_LEAK_TEST_DURATION_MS   10000     ///< Default duration (in ms) for a leak test.
 #define VACUUM_REGULATE_HYSTERESIS_PSIG 1.0f      ///< Hysteresis band (PSI) for pump relay cycling during vacuum regulation.
-#define VACUUM_SETTLE_TIME_S            2.0f      ///< Time (in s) to let pressure stabilize before starting a leak test measurement.
+#define VACUUM_SETTLE_TIME_S            4.0f      ///< Time (in s) to let pressure stabilize before starting a leak test measurement.
 /** @} */
 /** @} */
 
@@ -330,7 +330,7 @@
  * @name Pinch Valve Operation Defaults
  * @{
  */
-#define PINCH_VALVE_PINCH_TORQUE_PERCENT    50.0f     ///< Default torque (%) for closing the valve during normal operation.
+#define PINCH_VALVE_PINCH_TORQUE_PERCENT    30.0f     ///< Default torque (%) for closing the valve during normal operation.
 #define PINCH_VALVE_PINCH_STROKE_MM         100.0f    ///< Default stroke (mm) for the closing move.
 #define PINCH_VALVE_PINCH_VEL_MMS           2.0f      ///< Speed (mm/s) for the closing (pinching) move.
 #define PINCH_VALVE_OPEN_VEL_MMS            10.0f     ///< Speed (mm/s) for the opening move (returning to the homed position).

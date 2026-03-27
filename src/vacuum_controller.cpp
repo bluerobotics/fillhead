@@ -27,6 +27,7 @@ VacuumController::VacuumController(Fillhead* controller) {
 
 	// Initialize parameters with default values from config, converting MS to S
 	m_targetPsig = DEFAULT_VACUUM_TARGET_PSIG;
+	m_regulateTargetPsig = DEFAULT_VACUUM_TARGET_PSIG;
 	m_pulldownTimeoutSec = (float)DEFAULT_VACUUM_PULLDOWN_TIMEOUT_MS / 1000.0f;
 	m_leakTestDeltaPsig = DEFAULT_LEAK_TEST_DELTA_PSIG;
 	m_leakTestDurationSec = (float)DEFAULT_LEAK_TEST_DURATION_MS / 1000.0f;
@@ -73,7 +74,7 @@ void VacuumController::vacuumOn(const char* args) {
 	if (args != NULL && args[0] != '\0') {
 		float target = std::atof(args);
 		if (target <= 0.0f && target > -15.0f) {
-			m_targetPsig = target;
+			m_regulateTargetPsig = target;
 			m_regulateEnabled = true;
 			m_state = VACUUM_ON;
 			PIN_VACUUM_RELAY.State(true);
@@ -95,7 +96,7 @@ void VacuumController::vacuumOn(const char* args) {
 
 void VacuumController::vacuumOff() {
 	if (m_state == VACUUM_OFF) {
-		reportEvent(STATUS_PREFIX_INFO, "VACUUM_OFF ignored: System is already OFF.");
+		reportEvent(STATUS_PREFIX_DONE, "vacuum_off complete. System was already OFF.");
 		return;
 	}
 	resetState();
@@ -144,9 +145,9 @@ void VacuumController::updateState() {
 
 	if (m_state == VACUUM_ON) {
 		if (m_regulateEnabled) {
-			if (m_vacuumPressurePsig <= m_targetPsig) {
+			if (m_vacuumPressurePsig <= m_regulateTargetPsig) {
 				PIN_VACUUM_RELAY.State(false);
-			} else if (m_vacuumPressurePsig > m_targetPsig + VACUUM_REGULATE_HYSTERESIS_PSIG) {
+			} else if (m_vacuumPressurePsig > m_regulateTargetPsig + VACUUM_REGULATE_HYSTERESIS_PSIG) {
 				PIN_VACUUM_RELAY.State(true);
 			}
 		}
@@ -274,9 +275,10 @@ void VacuumController::reportEvent(const char* statusType, const char* message) 
 }
 
 const char* VacuumController::getTelemetryString() {
+	float reportedTarget = (m_state == VACUUM_ON && m_regulateEnabled) ? m_regulateTargetPsig : m_targetPsig;
 	snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
 	"vac_st:%d,vac_pv:%.2f,vac_sp:%.1f",
-	(int)m_state, m_vacuumPressurePsig, m_targetPsig);
+	(int)m_state, m_vacuumPressurePsig, reportedTarget);
 	return m_telemetryBuffer;
 }
 

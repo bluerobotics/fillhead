@@ -120,7 +120,7 @@ void HeaterController::heaterOn(const char* args) {
 		snprintf(response, sizeof(response), "HEATER_ON: Setpoint updated to %.1f C. PID remains active.", m_pid_setpoint);
 		reportEvent(STATUS_PREFIX_DONE, response);
 	} else {
-		reportEvent(STATUS_PREFIX_INFO, "HEATER_ON ignored: PID was already active.");
+		reportEvent(STATUS_PREFIX_DONE, "heater_on complete. PID was already active.");
 	}
 }
 
@@ -139,7 +139,7 @@ void HeaterController::heaterOff() {
 		m_trState = TR_INACTIVE;
 		reportEvent(STATUS_PREFIX_DONE, "HEATER_OFF: PID control deactivated.");
 	} else {
-		reportEvent(STATUS_PREFIX_INFO, "HEATER_OFF ignored: Heater was already off.");
+		reportEvent(STATUS_PREFIX_DONE, "heater_off complete. Heater was already off.");
 	}
 }
 

@@ -117,8 +117,9 @@ class VacuumController {
 	float m_vacuumPressurePsig;         ///< The raw vacuum pressure reading from the sensor in PSIG.
 	float m_smoothedVacuumPsig;         ///< The smoothed (EWMA) vacuum pressure in PSIG.
 	bool m_firstVacuumReading;          ///< Flag to handle the first reading for the smoothing filter.
-	float m_targetPsig;                 ///< The target vacuum pressure for pulldown and hold states in PSIG.
-	bool m_regulateEnabled;             ///< When true, VACUUM_ON actively cycles the pump relay to hold the target pressure.
+	float m_targetPsig;                 ///< The target vacuum pressure for leak test pulldown in PSIG.
+	float m_regulateTargetPsig;         ///< The target vacuum pressure for VACUUM_ON regulation in PSIG.
+	bool m_regulateEnabled;             ///< When true, VACUUM_ON actively cycles the pump relay to hold the regulate target pressure.
 	float m_pulldownTimeoutSec;         ///< The timeout in seconds for reaching the target pressure during pulldown.
 	float m_leakTestDeltaPsig;          ///< The maximum allowed pressure increase (less negative) during a leak test in PSIG.
 	float m_leakTestDurationSec;        ///< The duration of the leak test in seconds.

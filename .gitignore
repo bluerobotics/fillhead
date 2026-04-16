@@ -1,5 +1,5 @@
 .vs/
-Debug/
+Debug/*
 !Debug/*.uf2
 !Debug/*.bin
 !Debug/*.elf

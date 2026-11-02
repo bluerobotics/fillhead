@@ -12,10 +12,9 @@
         "map": {
             "0": "standby",
             "1": "homing",
-            "2": "jogging",
-            "3": "feeding",
-            "4": "moving",
-            "5": "motor fault"
+            "2": "feeding",
+            "3": "moving",
+            "4": "motor fault"
         },
         "help": "Current operational state of the injector motors",
         "gui_var": "fillhead_injector_state_var"

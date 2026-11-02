@@ -59,10 +59,26 @@
         "firmware_key": "h_st",
         "map": {
             "0": "off",
-            "1": "active"
+            "1": "active",
+            "2": "fault"
         },
         "help": "Heater PID control status",
         "gui_var": "fillhead_heater_state_var"
+    },
+    "heater_fault": {
+        "type": "int",
+        "default": 0,
+        "firmware_key": "h_ft",
+        "map": {
+            "0": "none",
+            "1": "over max temperature",
+            "2": "under min temperature",
+            "3": "sensor fault",
+            "4": "thermal runaway",
+            "5": "heating failed"
+        },
+        "help": "Latched thermal protection fault, cleared by heater_off",
+        "gui_var": "fillhead_heater_fault_var"
     },
     "vacuum_state": {
         "type": "int",

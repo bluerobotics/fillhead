@@ -2,6 +2,18 @@
 
 All notable changes to the Fillhead firmware will be documented in this file.
 
+## [Unreleased]
+
+### Telemetry
+- Fixed the injector's telemetry being cut off at 256 bytes: its string is about 340 bytes, so the target position (`tp`) could arrive cut short (10.00 as 1) and `ep`, `sp`, `pt`, `ta`, `hm`, `hs0`, `hs1`, `fm` and `pol` never arrived. The buffer is now 512 bytes
+- The injector's telemetry and the whole message each log an error once if they ever outgrow their buffers
+
+### Definition Updates
+- Fixed `injector_state` labels in `telemetry.json`: a stale list made a move read as feeding and a motor fault as moving
+- Added `heater_fault` (wire key `h_ft`), which the firmware sent but `telemetry.json` did not define, and the fault state to `heater_state`
+
+---
+
 ## [0.5.0] - 2026-03-18
 
 ### Message Cleanup

@@ -370,7 +370,7 @@ void Fillhead::performSafetyCheck() {
         m_lightCurtainTripped = true;
         abort();
         m_mainState = STATE_ERROR;
-        reportEvent(STATUS_PREFIX_ERROR, "Light curtain tripped. Motors disabled. Clear obstruction and send reset.");
+        reportEvent(STATUS_PREFIX_ERROR, "Light curtain tripped. Motion stopped. Clear obstruction and send reset.");
     }
 #endif
 
@@ -414,6 +414,8 @@ void Fillhead::updateState() {
 #if WATCHDOG_ENABLED
                 g_watchdogBreadcrumb = WD_BREADCRUMB_MOTOR_FAULT_REPORT;
 #endif
+                // Stop everything else first: the other motors would keep moving, and ERROR refuses Stop.
+                abort();
                 m_mainState = STATE_ERROR;
                 g_errorLog.log(LOG_ERROR, "Motor fault detected -> ERROR state");
                 reportEvent(STATUS_PREFIX_ERROR, "Motor fault detected. System entering ERROR state. Send reset to recover.");
@@ -536,7 +538,7 @@ void Fillhead::dispatchCommand(const Message& msg) {
     }
 
     if (m_mainState == STATE_ERROR) {
-        if (command_enum != CMD_DISCOVER_DEVICE && command_enum != CMD_RESET && command_enum != CMD_DUMP_ERROR_LOG) {
+        if (command_enum != CMD_DISCOVER_DEVICE && command_enum != CMD_RESET && command_enum != CMD_DUMP_ERROR_LOG && command_enum != CMD_HEATER_OFF) {
             m_comms.reportEvent(STATUS_PREFIX_ERROR, "Command ignored: System in ERROR state. Send reset to recover.");
             g_errorLog.logf(LOG_WARNING, "Cmd blocked (ERROR): %s", msg.buffer);
             return;
@@ -769,8 +771,17 @@ void Fillhead::dispatchCommand(const Message& msg) {
                 reportEvent(STATUS_PREFIX_INFO, msg_buf);
             } else {
                 float old_offset = m_injector.getForceCalibrationOffset();
-                float current_torque = (MOTOR_INJECTOR_A.HlfbPercent() + MOTOR_INJECTOR_B.HlfbPercent()) / 2.0f;
-                float new_offset = -current_torque;
+                // HlfbPercent reads TORQUE_HLFB_AT_POSITION at rest, not a torque: averaged in, that set an offset of
+                // +9999 and with it a torque limit no move could reach.
+                float torque_a = MOTOR_INJECTOR_A.HlfbPercent();
+                float torque_b = MOTOR_INJECTOR_B.HlfbPercent();
+                if (torque_a == TORQUE_HLFB_AT_POSITION || torque_b == TORQUE_HLFB_AT_POSITION) {
+                    reportEvent(STATUS_PREFIX_INFO, "Motor torque reads nothing at rest. Offset left unchanged.");
+                    reportEvent(STATUS_PREFIX_DONE, "set_force_zero");
+                    break;
+                }
+                // The force is (torque - offset) / scale, so zero force means an offset of the torque itself.
+                float new_offset = (torque_a + torque_b) / 2.0f;
 
                 m_injector.setForceCalibrationOffset(new_offset);
 

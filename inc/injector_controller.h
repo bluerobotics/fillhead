@@ -491,6 +491,8 @@ private:
     bool m_isEnabled;                  ///< Flag indicating if motors are currently enabled.
     bool m_retractDone;                ///< Flag indicating if retract position has been set.
     bool m_pausedMessageSent;          ///< Flag to prevent spamming "paused" messages.
+    bool m_moveMotionSeen;             ///< The motors have been seen moving since the current retract started.
+    bool m_feedMotionSeen;             ///< The motors have been seen moving since the current feed started or resumed.
 
     // ── Torque & Force Sensing ───────────────────────────────────────────
 

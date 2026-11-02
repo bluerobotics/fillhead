@@ -50,6 +50,8 @@ Injector::Injector(MotorDriver* motorA, MotorDriver* motorB, Fillhead* controlle
     m_isEnabled = true;
     m_retractDone = false;
     m_pausedMessageSent = false;
+    m_moveMotionSeen = false;
+    m_feedMotionSeen = false;
     m_originalMoveCommand = nullptr;
     m_enableStartTime = 0;
 
@@ -257,7 +259,7 @@ void Injector::setup() {
     if (retractBits != 0 && retractBits != -1) {
         float tempRetract;
         memcpy(&tempRetract, &retractBits, sizeof(float));
-        if (tempRetract >= -100.0f && tempRetract <= 100.0f) {
+        if (tempRetract >= -1000.0f && tempRetract <= 1000.0f) {
             m_retract_position_mm = tempRetract;
         }
     }
@@ -616,8 +618,10 @@ void Injector::updateState() {
                     if (m_homingState == HOMING_MACHINE) {
                         m_machineHomeReferenceSteps = m_motorA->PositionRefCommanded();
                         m_homingMachineDone = true;
+                        m_active_op_target_position_steps = m_machineHomeReferenceSteps;
 
-                        if (m_retract_position_mm != 0.0f) {
+                        // Also when set to 0 mm, or the retract would stay relative to the previous home.
+                        if (m_retract_position_mm != 0.0f || m_retractReferenceSteps != LONG_MIN) {
                             m_retractReferenceSteps = m_machineHomeReferenceSteps
                                 + static_cast<long>(m_retract_position_mm * STEPS_PER_MM_INJECTOR);
                             char dbg[128];
@@ -635,6 +639,7 @@ void Injector::updateState() {
                     } else {
                         m_cartridgeHomeReferenceSteps = m_motorA->PositionRefCommanded();
                         m_homingCartridgeDone = true;
+                        m_active_op_target_position_steps = m_cartridgeHomeReferenceSteps;
                     }
 
                     char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
@@ -712,17 +717,20 @@ void Injector::updateState() {
                 }
             }
 
-            if (!isMoving() && m_feedState != FEED_INJECT_PAUSED) {
-                bool isStarting = (m_feedState == FEED_INJECT_STARTING);
-                uint32_t elapsed = Milliseconds() - m_feedStartTime;
+            if (isMoving()) m_feedMotionSeen = true;
 
-                if (!isStarting || (isStarting && elapsed > MOVE_START_TIMEOUT_MS)) {
+            if (!isMoving() && m_feedState != FEED_INJECT_PAUSED) {
+                if (m_feedMotionSeen) {
                     if (m_activeFeedCommand) {
                         char doneMsg[STATUS_MESSAGE_BUFFER_SIZE];
                         std::snprintf(doneMsg, sizeof(doneMsg), "%s complete.", m_activeFeedCommand);
                         reportEvent(STATUS_PREFIX_DONE, doneMsg);
                     }
                     finalizeAndResetActiveDispenseOperation(true);
+                    m_state = STATE_STANDBY;
+                } else if (Milliseconds() - m_feedStartTime > MOVE_START_TIMEOUT_MS) {
+                    reportEvent(STATUS_PREFIX_ERROR, "Feed timeout: Motor failed to start.");
+                    finalizeAndResetActiveDispenseOperation(false);
                     m_state = STATE_STANDBY;
                 }
             }
@@ -746,7 +754,12 @@ void Injector::updateState() {
                     m_active_op_remaining_steps = m_active_op_total_target_steps - total_steps_dispensed;
                     if (m_active_op_remaining_steps < 0) m_active_op_remaining_steps = 0;
                 }
-                reportEvent(STATUS_PREFIX_INFO, "Feed Op: Operation Paused. Waiting for Resume/Cancel.");
+                if (!m_pausedMessageSent) {
+                    reportEvent(STATUS_PREFIX_INFO, "Feed Op: Operation Paused. Waiting for Resume/Cancel.");
+                    m_pausedMessageSent = true;
+                }
+            } else {
+                m_pausedMessageSent = false;
             }
             break;
         }
@@ -788,6 +801,8 @@ void Injector::updateState() {
             }
 
             // Transition from STARTING/RESUMING to ACTIVE
+            if (isMoving()) m_moveMotionSeen = true;
+
             if ((m_moveState == MOVE_STARTING || m_moveState == MOVE_RESUMING) && isMoving()) {
                 m_moveState = MOVE_ACTIVE;
                 m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
@@ -795,7 +810,10 @@ void Injector::updateState() {
 
             // Check for move completion
             if (!isMoving() && m_moveState != MOVE_PAUSED) {
-                bool isStarting = (m_moveState == MOVE_STARTING || m_moveState == MOVE_RESUMING);
+                // A retract has no starting state of its own: it is under way once its motors have moved.
+                bool retractNotStarted = (m_moveState == MOVE_TO_HOME && !m_moveMotionSeen
+                    && m_motorA->PositionRefCommanded() != m_active_op_target_position_steps);
+                bool isStarting = (m_moveState == MOVE_STARTING || m_moveState == MOVE_RESUMING || retractNotStarted);
                 uint32_t elapsed = Milliseconds() - m_moveStartTime;
 
                 if (isStarting && elapsed > MOVE_START_TIMEOUT_MS) {
@@ -823,6 +841,8 @@ void Injector::updateState() {
                             ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
                         m_active_op_force_action[0] = '\0';
                         m_moveState = MOVE_TO_HOME;
+                        m_moveMotionSeen = false;
+                        m_moveStartTime = Milliseconds();
                         m_activeMoveCommand = "retract";
                         m_active_op_target_position_steps = retract_target;
                         long current_pos = m_motorA->PositionRefCommanded();
@@ -1042,7 +1062,7 @@ void Injector::home() {
     m_homingTouchSps = (int)fabs(INJECTOR_HOMING_TOUCH_VEL_MMS * STEPS_PER_MM_INJECTOR);
     m_homingAccelSps2 = (int)fabs(INJECTOR_HOMING_ACCEL_MMSS * STEPS_PER_MM_INJECTOR);
 
-    m_active_op_target_position_steps = 0;
+    m_active_op_target_position_steps = m_motorA->PositionRefCommanded();
 
     char logMsg[200];
     snprintf(logMsg, sizeof(logMsg), "Homing params: dist_steps=%ld, rapid_sps=%d, touch_sps=%d, accel_sps2=%d",
@@ -1136,9 +1156,18 @@ void Injector::moveToCartridgeHome() {
     m_state = STATE_FEEDING;
     m_feedState = FEED_MOVING_TO_HOME;
     m_activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_HOME;
+    m_feedStartTime = Milliseconds();
+    m_feedMotionSeen = false;
 
     long current_pos = m_motorA->PositionRefCommanded();
     long steps_to_move = m_cartridgeHomeReferenceSteps - current_pos;
+    if (steps_to_move == 0) {
+        m_state = STATE_STANDBY;
+        m_feedState = FEED_STANDBY;
+        m_activeFeedCommand = nullptr;
+        reportEvent(STATUS_PREFIX_DONE, "move_to_cartridge_home complete.");
+        return;
+    }
 
     m_torqueLimit = (float)m_feedDefaultTorquePercent;
     startMove(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
@@ -1160,11 +1189,20 @@ void Injector::moveToCartridgeRetract(const char* args) {
     m_state = STATE_FEEDING;
     m_feedState = FEED_MOVING_TO_RETRACT;
     m_activeFeedCommand = CMD_STR_MOVE_TO_CARTRIDGE_RETRACT;
+    m_feedStartTime = Milliseconds();
+    m_feedMotionSeen = false;
 
     long offset_steps = (long)(offset_mm * STEPS_PER_MM_INJECTOR);
     long target_pos = m_cartridgeHomeReferenceSteps - offset_steps;
     long current_pos = m_motorA->PositionRefCommanded();
     long steps_to_move = target_pos - current_pos;
+    if (steps_to_move == 0) {
+        m_state = STATE_STANDBY;
+        m_feedState = FEED_STANDBY;
+        m_activeFeedCommand = nullptr;
+        reportEvent(STATUS_PREFIX_DONE, "move_to_cartridge_retract complete.");
+        return;
+    }
 
     m_torqueLimit = (float)m_feedDefaultTorquePercent;
     startMove(steps_to_move, m_feedDefaultVelocitySPS, m_feedDefaultAccelSPS2);
@@ -1204,6 +1242,7 @@ void Injector::initiateInjectMove(const char* args) {
         m_active_op_feed_force_action[sizeof(m_active_op_feed_force_action) - 1] = '\0';
         m_activeFeedCommand = CMD_STR_INJECT;
         m_feedStartTime = Milliseconds();
+        m_feedMotionSeen = false;
 
         char start_msg[128];
         snprintf(start_msg, sizeof(start_msg), "inject initiated. (ml/mm: %.4f, steps/ml: %.2f, force_limit: %.1f kg, action: %s)",
@@ -1256,6 +1295,8 @@ void Injector::resumeOperation() {
     }
     m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
     m_feedState = FEED_INJECT_RESUMING;
+    m_feedStartTime = Milliseconds();
+    m_feedMotionSeen = false;
     m_torqueLimit = (float)m_active_op_torque_percent;
     startMove(m_active_op_remaining_steps, m_active_op_velocity_sps, m_active_op_accel_sps2);
     reportEvent(STATUS_PREFIX_DONE, "RESUME_INJECTION complete.");
@@ -1593,6 +1634,8 @@ void Injector::retract(const char* args) {
     fullyResetActiveMove();
     m_state = STATE_MOVING;
     m_moveState = MOVE_TO_HOME;
+    m_moveMotionSeen = false;
+    m_moveStartTime = Milliseconds();
     m_activeMoveCommand = "retract";
 
     m_active_op_target_position_steps = m_retractReferenceSteps;
@@ -1637,6 +1680,19 @@ void Injector::pauseGeneralMove() {
             reportEvent(STATUS_PREFIX_INFO, "No active move to pause.");
             reportEvent(STATUS_PREFIX_DONE, "pause");
         }
+    } else if (m_state == STATE_FEEDING) {
+        if (m_feedState == FEED_INJECT_ACTIVE || m_feedState == FEED_INJECT_STARTING || m_feedState == FEED_INJECT_RESUMING) {
+            abortMove();
+            m_feedState = FEED_INJECT_PAUSED;
+            reportEvent(STATUS_PREFIX_INFO, "Injection paused. Send resume to continue.");
+        } else if (m_feedState == FEED_MOVING_TO_HOME || m_feedState == FEED_MOVING_TO_RETRACT) {
+            // These cannot be resumed: stop, and say so to whatever was waiting for them.
+            abortMove();
+            finalizeAndResetActiveDispenseOperation(false);
+            m_state = STATE_STANDBY;
+            reportEvent(STATUS_PREFIX_ERROR, "Move to cartridge stopped by pause. Send it again to continue.");
+        }
+        reportEvent(STATUS_PREFIX_DONE, "pause");
     } else {
         reportEvent(STATUS_PREFIX_INFO, "No active operation to pause.");
         reportEvent(STATUS_PREFIX_DONE, "pause");
@@ -1650,10 +1706,10 @@ void Injector::resumeGeneralMove() {
     } else if (m_state == STATE_MOVING) {
         if (m_moveState == MOVE_PAUSED) {
             long current_pos = m_motorA->PositionRefCommanded();
-            long steps_moved_so_far = current_pos - m_active_op_initial_axis_steps;
-            long remaining_steps = m_active_op_total_target_steps - std::abs(steps_moved_so_far);
+            // Signed, toward the target: a move or retract toward home runs in the negative direction.
+            long remaining_steps = m_active_op_target_position_steps - current_pos;
 
-            if (remaining_steps > 0) {
+            if (remaining_steps != 0) {
                 m_active_op_remaining_steps = remaining_steps;
                 m_active_op_segment_initial_axis_steps = current_pos;
                 m_moveState = MOVE_RESUMING;
@@ -1681,6 +1737,9 @@ void Injector::resumeGeneralMove() {
             reportEvent(STATUS_PREFIX_INFO, "No paused move to resume.");
             reportEvent(STATUS_PREFIX_DONE, "resume");
         }
+    } else if (m_state == STATE_FEEDING && m_feedState == FEED_INJECT_PAUSED) {
+        resumeOperation();
+        reportEvent(STATUS_PREFIX_DONE, "resume");
     } else {
         reportEvent(STATUS_PREFIX_INFO, "No paused operation to resume.");
         reportEvent(STATUS_PREFIX_DONE, "resume");
@@ -1700,6 +1759,12 @@ void Injector::cancelGeneralMove() {
         finalizeAndResetActiveMove(false);
         m_state = STATE_STANDBY;
         reportEvent(STATUS_PREFIX_INFO, "Move cancelled. Returning to standby.");
+        reportEvent(STATUS_PREFIX_DONE, "cancel");
+    } else if (m_state == STATE_FEEDING) {
+        abortMove();
+        finalizeAndResetActiveDispenseOperation(false);
+        m_state = STATE_STANDBY;
+        reportEvent(STATUS_PREFIX_INFO, "Injection cancelled. Returning to standby.");
         reportEvent(STATUS_PREFIX_DONE, "cancel");
     } else {
         reportEvent(STATUS_PREFIX_INFO, "No active operation to cancel.");
@@ -1971,6 +2036,8 @@ void Injector::handleLimitReached(const char* limit_type, float limit_value) {
             ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
         m_active_op_force_action[0] = '\0';
         m_moveState = MOVE_TO_HOME;
+        m_moveMotionSeen = false;
+        m_moveStartTime = Milliseconds();
         m_activeMoveCommand = "retract";
         m_active_op_target_position_steps = retract_target;
         long cur = m_motorA->PositionRefCommanded();
@@ -1993,6 +2060,8 @@ void Injector::handleLimitReached(const char* limit_type, float limit_value) {
             ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
         m_active_op_force_action[0] = '\0';
         m_moveState = MOVE_TO_HOME;
+        m_moveMotionSeen = false;
+        m_moveStartTime = Milliseconds();
         m_activeMoveCommand = "retract";
         m_active_op_target_position_steps = retract_target;
         long cur = m_motorA->PositionRefCommanded();
@@ -2033,11 +2102,15 @@ void Injector::handleFeedLimitReached(const char* limit_type, float limit_value)
         } else {
             reportEvent(STATUS_PREFIX_INFO, "Inject force limit reached, retracting...");
         }
+        const bool finishInject = strcmp(action, "retract") == 0;
         finalizeAndResetActiveDispenseOperation(false);
+        m_originalMoveCommand = finishInject ? "inject" : nullptr;
         long retract_target = (m_retractReferenceSteps == LONG_MIN)
             ? m_machineHomeReferenceSteps : m_retractReferenceSteps;
         m_state = STATE_MOVING;
         m_moveState = MOVE_TO_HOME;
+        m_moveMotionSeen = false;
+        m_moveStartTime = Milliseconds();
         m_activeMoveCommand = "retract";
         m_active_op_target_position_steps = retract_target;
         long cur = m_motorA->PositionRefCommanded();
@@ -2068,8 +2141,9 @@ void Injector::handleFeedLimitReached(const char* limit_type, float limit_value)
 void Injector::finalizeAndResetActiveDispenseOperation(bool success) {
     if (success) {
         m_last_completed_dispense_ml = m_active_op_total_dispensed_ml;
-        m_cumulative_dispensed_ml += m_active_op_total_dispensed_ml;
     }
+    // Total counts what left the cartridge, also when the injection ended early.
+    m_cumulative_dispensed_ml += m_active_op_total_dispensed_ml;
     fullyResetActiveDispenseOperation();
 }
 

@@ -874,12 +874,11 @@ void Fillhead::dispatchCommand(const Message& msg) {
                     snprintf(line, sizeof(line), "[%lu] %s: %s",
                              (unsigned long)entry.timestamp, lvl, entry.message);
                     reportEvent(STATUS_PREFIX_INFO, line);
-                    Delay_ms(5);
-                    if ((i + 1) % 5 == 0) {
+                    // Send it now: the TX queue only drains here, and holds 32 lines.
+                    m_comms.update();
 #if WATCHDOG_ENABLED
-                        feedWatchdog();
+                    feedWatchdog();
 #endif
-                    }
                 }
             }
 #if WATCHDOG_ENABLED
@@ -909,12 +908,10 @@ void Fillhead::dispatchCommand(const Message& msg) {
                              (unsigned long)hb.timestamp, hb.usbConnected,
                              hb.networkActive, hb.usbAvailable);
                     reportEvent(STATUS_PREFIX_INFO, line);
-                    if ((i + 1) % 10 == 0) {
-                        Delay_ms(50);
+                    m_comms.update();
 #if WATCHDOG_ENABLED
-                        feedWatchdog();
+                    feedWatchdog();
 #endif
-                    }
                 }
             }
 #if WATCHDOG_ENABLED

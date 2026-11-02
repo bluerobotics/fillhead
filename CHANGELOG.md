@@ -8,6 +8,30 @@ All notable changes to the Fillhead firmware will be documented in this file.
 - Fixed the injector's telemetry being cut off at 256 bytes: its string is about 340 bytes, so the target position (`tp`) could arrive cut short (10.00 as 1) and `ep`, `sp`, `pt`, `ta`, `hm`, `hs0`, `hs1`, `fm` and `pol` never arrived. The buffer is now 512 bytes
 - The injector's telemetry and the whole message each log an error once if they ever outgrow their buffers
 
+### Motion
+- Fixed `resume` always moving in the positive direction, so a move or retract toward home resumed the wrong way. It now goes toward the target
+- Fixed a retract or a move to the cartridge reporting DONE before its motors had started, leaving them running with the state in standby
+- An injection that never starts is now an error, not a success
+- `pause`, `resume` and `cancel` now act on an injection. The app's Pause sends `pause`, and a force-limit hold resumes with `resume`
+- Fixed a paused injection sending its paused message every loop, flooding the TX queue
+- Fixed an injection with the retract force action never reporting DONE for `inject`
+- Fixed the target reading as minus the home offset after homing
+- Fixed the retract position being forgotten at reboot past 100 mm, and staying relative to the previous home when set to 0 mm
+- Total volume now counts what left the cartridge when an injection ends early
+
+### Safety
+- A motor fault now stops all motion first: the other motors kept moving, and ERROR refuses Stop. `heater_off` is accepted in ERROR
+- Fixed `set_force_zero` in motor_torque mode setting an offset of +9999 at rest, and with it a torque limit no move could reach
+- Fixed lowering the heater setpoint by more than 10 C tripping thermal runaway after 30 s of cooling
+- A jog now leaves a valve reading halted, not open, which is what `inject` checks
+- The light curtain message no longer says the motors are disabled
+
+### Commands
+- `enable`, `heater_on`, `heater_off`, `vacuum_off` and the injection pause, resume and cancel now report DONE when there is nothing to do, so a script no longer waits 10 minutes on them. So does a jog stopped by its torque limit, and `set_fan_threshold`'s DONE names its command
+- A valve close with torque or stroke 0 is now refused: it reported success without closing
+- Each valve homing move gets its own 500 ms to start
+- Fixed `dump_error_log` losing everything after about 30 lines, its DONE included, because a delay does not drain the TX queue
+
 ### Definition Updates
 - Fixed `injector_state` labels in `telemetry.json`: a stale list made a move read as feeding and a motor fault as moving
 - Added `heater_fault` (wire key `h_ft`), which the firmware sent but `telemetry.json` did not define, and the fault state to `heater_state`

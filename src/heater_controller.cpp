@@ -120,7 +120,7 @@ void HeaterController::heaterOn(const char* args) {
 		snprintf(response, sizeof(response), "HEATER_ON: Setpoint updated to %.1f C. PID remains active.", m_pid_setpoint);
 		reportEvent(STATUS_PREFIX_DONE, response);
 	} else {
-		reportEvent(STATUS_PREFIX_INFO, "HEATER_ON ignored: PID was already active.");
+		reportEvent(STATUS_PREFIX_DONE, "HEATER_ON: PID was already active.");
 	}
 }
 
@@ -139,7 +139,7 @@ void HeaterController::heaterOff() {
 		m_trState = TR_INACTIVE;
 		reportEvent(STATUS_PREFIX_DONE, "HEATER_OFF: PID control deactivated.");
 	} else {
-		reportEvent(STATUS_PREFIX_INFO, "HEATER_OFF ignored: Heater was already off.");
+		reportEvent(STATUS_PREFIX_DONE, "HEATER_OFF: Heater was already off.");
 	}
 }
 
@@ -286,7 +286,7 @@ void HeaterController::setFanThreshold(const char* args) {
 		NvmManager &nvmMgr = NvmManager::Instance();
 		nvmMgr.Int32(static_cast<NvmManager::NvmLocations>(NVM_SLOT_COOLING_FAN_THRESHOLD), (int32_t)(val * 100.0f));
 		char response[STATUS_MESSAGE_BUFFER_SIZE];
-		snprintf(response, sizeof(response), "Fan threshold set to %.1f C and saved to NVM.", val);
+		snprintf(response, sizeof(response), "set_fan_threshold complete. Threshold=%.1f C, saved to NVM.", val);
 		reportEvent(STATUS_PREFIX_DONE, response);
 	} else {
 		reportEvent(STATUS_PREFIX_ERROR, "Invalid fan threshold. Must be between 0 and 200 C.");

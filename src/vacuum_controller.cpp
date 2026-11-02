@@ -95,7 +95,7 @@ void VacuumController::vacuumOn(const char* args) {
 
 void VacuumController::vacuumOff() {
 	if (m_state == VACUUM_OFF) {
-		reportEvent(STATUS_PREFIX_INFO, "VACUUM_OFF ignored: System is already OFF.");
+		reportEvent(STATUS_PREFIX_DONE, "VACUUM_OFF: System is already OFF.");
 		return;
 	}
 	resetState();

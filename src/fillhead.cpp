@@ -1248,6 +1248,7 @@ void Fillhead::enable() {
         m_comms.reportEvent(STATUS_PREFIX_DONE, "enable");
     } else {
         m_comms.reportEvent(STATUS_PREFIX_INFO, "System already enabled.");
+        m_comms.reportEvent(STATUS_PREFIX_DONE, "enable");
     }
 }
 

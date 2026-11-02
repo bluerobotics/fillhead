@@ -1275,6 +1275,7 @@ void Injector::setCartridgeMlPerMm(const char* args) {
 void Injector::pauseOperation() {
     if (m_state != STATE_FEEDING || m_feedState != FEED_INJECT_ACTIVE) {
         reportEvent(STATUS_PREFIX_INFO, "PAUSE ignored: No active injection to pause.");
+        reportEvent(STATUS_PREFIX_DONE, "PAUSE_INJECTION complete.");
         return;
     }
     abortMove();
@@ -1285,12 +1286,14 @@ void Injector::pauseOperation() {
 void Injector::resumeOperation() {
     if (m_state != STATE_FEEDING || m_feedState != FEED_INJECT_PAUSED) {
         reportEvent(STATUS_PREFIX_INFO, "RESUME ignored: No operation was paused.");
+        reportEvent(STATUS_PREFIX_DONE, "RESUME_INJECTION complete.");
         return;
     }
     if (m_active_op_remaining_steps <= 0) {
         reportEvent(STATUS_PREFIX_INFO, "RESUME ignored: No remaining volume to dispense.");
-        fullyResetActiveDispenseOperation();
+        finalizeAndResetActiveDispenseOperation(true);
         m_state = STATE_STANDBY;
+        reportEvent(STATUS_PREFIX_DONE, "RESUME_INJECTION complete.");
         return;
     }
     m_active_op_segment_initial_axis_steps = m_motorA->PositionRefCommanded();
@@ -1305,6 +1308,7 @@ void Injector::resumeOperation() {
 void Injector::cancelOperation() {
     if (m_state != STATE_FEEDING) {
         reportEvent(STATUS_PREFIX_INFO, "CANCEL ignored: No active operation to cancel.");
+        reportEvent(STATUS_PREFIX_DONE, "CANCEL_INJECTION complete.");
         return;
     }
     abortMove();

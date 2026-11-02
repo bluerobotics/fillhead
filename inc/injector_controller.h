@@ -607,5 +607,5 @@ private:
 
     // ── Telemetry Buffer ─────────────────────────────────────────────────
 
-    char m_telemetryBuffer[256]; ///< Buffer for the formatted telemetry string.
+    char m_telemetryBuffer[512]; ///< Buffer for the formatted telemetry string (about 340 bytes at its longest).
 };

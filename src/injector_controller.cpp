@@ -2279,7 +2279,7 @@ const char* Injector::getTelemetryString() {
 
     float target_pos = (float)((double)(m_active_op_target_position_steps - m_machineHomeReferenceSteps) / STEPS_PER_MM_INJECTOR);
 
-    // Two-stage snprintf to fit as much as possible into 256 bytes.
+    // Built in two stages.
     // Stage 1: Core Fillhead injection telemetry
     int n = std::snprintf(m_telemetryBuffer, sizeof(m_telemetryBuffer),
         "inj_t0:%.1f,inj_t1:%.1f,"
@@ -2304,9 +2304,10 @@ const char* Injector::getTelemetryString() {
     }
 
     // Stage 2: Pressboi-compatible fields (appended if space remains)
+    int appended = 0;
     if (n > 0 && (size_t)n < sizeof(m_telemetryBuffer) - 1) {
         int homed = (m_homingMachineDone && m_homingCartridgeDone) ? 1 : 0;
-        std::snprintf(m_telemetryBuffer + n, sizeof(m_telemetryBuffer) - n,
+        appended = std::snprintf(m_telemetryBuffer + n, sizeof(m_telemetryBuffer) - n,
             ",fmt:%.2f,flc:%.2f,far:%ld,fl:%.1f,j:%.4f,"
             "cp:%.3f,rp:%.2f,tp:%.2f,"
             "ep:%.3f,sp:%.3f,pt:%.2f,"
@@ -2319,6 +2320,13 @@ const char* Injector::getTelemetryString() {
             avg_torque, homed,
             getHomeSensorStateM0() ? 1 : 0, getHomeSensorStateM1() ? 1 : 0,
             m_force_mode, m_polarity);
+    }
+
+    // Say so once if this outgrows the buffer: a field cut short reads at the app as a wrong value, not a missing one.
+    static bool truncationLogged = false;
+    if (!truncationLogged && n + appended >= (int)sizeof(m_telemetryBuffer)) {
+        truncationLogged = true;
+        g_errorLog.logf(LOG_ERROR, "Injector telemetry cut off: %d bytes do not fit in %d.", n + appended, (int)sizeof(m_telemetryBuffer));
     }
 
     return m_telemetryBuffer;

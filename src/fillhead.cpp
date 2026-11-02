@@ -1058,7 +1058,7 @@ void Fillhead::publishTelemetry() {
         default:                   mainStateStr = "UNKNOWN"; break;
     }
 
-    snprintf(telemetryBuffer, sizeof(telemetryBuffer),
+    int telemetryLength = snprintf(telemetryBuffer, sizeof(telemetryBuffer),
         "%s"
         "fillhead_state:%s,"
         "%s,"
@@ -1082,6 +1082,13 @@ void Fillhead::publishTelemetry() {
         m_vacuum.getState(),
         (int)m_lightCurtainTripped
     );
+
+    // Say so once if the whole message outgrows the buffer, as the injector's part does.
+    static bool truncationLogged = false;
+    if (!truncationLogged && telemetryLength >= (int)sizeof(telemetryBuffer)) {
+        truncationLogged = true;
+        g_errorLog.logf(LOG_ERROR, "Telemetry cut off: %d bytes do not fit in %d.", telemetryLength, (int)sizeof(telemetryBuffer));
+    }
 
     bool guiDiscovered = m_comms.isGuiDiscovered();
     IpAddress targetIp = guiDiscovered ? m_comms.getGuiIp() : IpAddress(0, 0, 0, 0);

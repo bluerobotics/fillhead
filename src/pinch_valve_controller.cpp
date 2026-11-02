@@ -107,7 +107,7 @@ void PinchValve::updateState() {
                 case RAPID_APPROACH_WAIT_TO_START:
                     if (m_motor->StatusReg().bit.StepsActive) {
                         m_homingPhase = RAPID_APPROACH_MOVING;
-                    } else if (Milliseconds() - m_homingStartTime > 500) {
+                    } else if (Milliseconds() - m_moveStartTime > 500) {
                         m_state = VALVE_ERROR;
                         m_isHomed = false;
                         m_homingPhase = HOMING_PHASE_IDLE;
@@ -135,7 +135,7 @@ void PinchValve::updateState() {
                 case BACKOFF_WAIT_TO_START:
                     if (m_motor->StatusReg().bit.StepsActive) {
                         m_homingPhase = BACKOFF_MOVING;
-                    } else if (Milliseconds() - m_homingStartTime > 500) {
+                    } else if (Milliseconds() - m_moveStartTime > 500) {
                         m_state = VALVE_ERROR;
                         m_isHomed = false;
                         m_homingPhase = HOMING_PHASE_IDLE;
@@ -156,7 +156,7 @@ void PinchValve::updateState() {
                 case SLOW_APPROACH_WAIT_TO_START:
                     if (m_motor->StatusReg().bit.StepsActive) {
                         m_homingPhase = SLOW_APPROACH_MOVING;
-                    } else if (Milliseconds() - m_homingStartTime > 500) {
+                    } else if (Milliseconds() - m_moveStartTime > 500) {
                         m_state = VALVE_ERROR;
                         m_isHomed = false;
                         m_homingPhase = HOMING_PHASE_IDLE;
@@ -258,12 +258,9 @@ void PinchValve::updateState() {
                     }
                     break;
                 case PHASE_MOVING:
-                    if (checkTorqueLimit()) {
-                        abort();
-                        m_state = m_isHomed ? VALVE_OPEN : VALVE_NOT_HOMED;
-                        m_opPhase = PHASE_IDLE;
-                    } else if (!m_motor->StatusReg().bit.StepsActive) {
-                        m_state = m_isHomed ? VALVE_OPEN : VALVE_NOT_HOMED;
+                    if (checkTorqueLimit() || !m_motor->StatusReg().bit.StepsActive) {
+                        if (m_motor->StatusReg().bit.StepsActive) abort();
+                        m_state = m_isHomed ? VALVE_HALTED : VALVE_NOT_HOMED;
                         m_opPhase = PHASE_IDLE;
                         char doneMsg[128];
                         snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
@@ -356,7 +353,6 @@ void PinchValve::open() {
     m_state = VALVE_MOVING;
     m_moveType = MOVE_TYPE_OPEN;
     m_opPhase = PHASE_WAIT_TO_START;
-    m_moveStartTime = Milliseconds();
 
     long target_steps = 0;
     long current_steps = m_motor->PositionRefCommanded();
@@ -401,24 +397,16 @@ void PinchValve::close(const char* args) {
         }
     }
 
+    long long_move_steps = (long)(stroke * STEPS_PER_MM_PINCH);
+    if (torque <= 0.0f || torque > 100.0f || long_move_steps <= 0) {
+        reportEvent(STATUS_PREFIX_ERROR, "Invalid close parameters. Torque must be 0-100 %, stroke above 0 mm.");
+        return;
+    }
+
     m_state = VALVE_MOVING;
     m_moveType = MOVE_TYPE_CLOSE;
     m_opPhase = PHASE_WAIT_TO_START;
-    m_moveStartTime = Milliseconds();
     m_torqueLimit = torque;
-
-    long long_move_steps = (long)(stroke * STEPS_PER_MM_PINCH);
-
-    if (long_move_steps == 0) {
-        m_state = VALVE_CLOSED;
-        m_opPhase = PHASE_IDLE;
-        m_moveType = MOVE_TYPE_NONE;
-        char doneMsg[128];
-        snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
-                 m_activeCommandStr ? m_activeCommandStr : "close");
-        reportEvent(STATUS_PREFIX_DONE, doneMsg);
-        return;
-    }
 
     int vel_sps = (int)(PINCH_VALVE_PINCH_VEL_MMS * STEPS_PER_MM_PINCH);
     int accel_sps2 = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
@@ -435,24 +423,22 @@ void PinchValve::jog(const char* args) {
         reportEvent(STATUS_PREFIX_ERROR, "Invalid jog command arguments.");
         return;
     }
-    m_state = VALVE_JOGGING;
-    m_moveType = MOVE_TYPE_NONE;
-    m_opPhase = PHASE_WAIT_TO_START;
-    m_moveStartTime = Milliseconds();
-    m_torqueLimit = JOG_DEFAULT_TORQUE_PERCENT;
 
     float dist_mm = atof(args);
     long steps = (long)(dist_mm * STEPS_PER_MM_PINCH);
 
     if (steps == 0) {
-        m_state = VALVE_HALTED;
-        m_opPhase = PHASE_IDLE;
         char doneMsg[128];
         snprintf(doneMsg, sizeof(doneMsg), "%s complete.",
                  m_activeCommandStr ? m_activeCommandStr : "jog");
         reportEvent(STATUS_PREFIX_DONE, doneMsg);
         return;
     }
+
+    m_state = VALVE_JOGGING;
+    m_moveType = MOVE_TYPE_NONE;
+    m_opPhase = PHASE_WAIT_TO_START;
+    m_torqueLimit = JOG_DEFAULT_TORQUE_PERCENT;
 
     int vel_sps = (int)(PINCH_JOG_DEFAULT_VEL_MMS * STEPS_PER_MM_PINCH);
     int accel_sps2_val = (int)(PINCH_JOG_DEFAULT_ACCEL_MMSS * STEPS_PER_MM_PINCH);
@@ -463,6 +449,7 @@ void PinchValve::jog(const char* args) {
 // --- Low-Level Helpers ---
 
 void PinchValve::moveSteps(long steps, int velocity_sps, int accel_sps2) {
+    m_moveStartTime = Milliseconds();
     if (m_motor->StatusReg().bit.Enabled) {
         m_firstTorqueReading = true;
         m_motor->VelMax(velocity_sps);

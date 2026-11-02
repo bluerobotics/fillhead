@@ -348,6 +348,14 @@ void HeaterController::checkThermalProtection() {
 			break;
 
 		case TR_FIRST_HEATING:
+			// Above the band after the setpoint was lowered: it is cooling down, which can outlast the runaway
+			// period. Stay here until it is back in the band. HEATER_MAXTEMP_C still guards a relay stuck on.
+			if (m_temperatureCelsius > m_pid_setpoint + THERMAL_RUNAWAY_HYSTERESIS_C) {
+				m_watchStartTemp = m_temperatureCelsius;
+				m_watchTimerStart = now;
+				break;
+			}
+
 			if (m_temperatureCelsius >= m_pid_setpoint - THERMAL_RUNAWAY_HYSTERESIS_C) {
 				m_trState = TR_STABLE;
 				m_trTimerStart = now;

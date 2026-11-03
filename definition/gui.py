@@ -207,7 +207,7 @@ def get_gui_variable_names():
         'fillhead_vac_valve_state_var',
         'fillhead_vacuum_state_var', 'fillhead_vacuum_psig_var',
         'fillhead_heater_state_var', 'fillhead_temp_c_var', 'fillhead_heater_display_var',
-        'pid_setpoint_var',
+        'fillhead_heater_setpoint_var',
         'total_dispensed_var',
         'injection_target_ml_var',
         'cycle_dispensed_var',
@@ -277,7 +277,7 @@ def create_gui_components(parent, shared_gui_refs):
             heater_state = shared_gui_refs['fillhead_heater_state_var'].get().upper()
             is_on = "ON" in heater_state or "ACTIVE" in heater_state
             if is_on:
-                setpoint_val = shared_gui_refs['pid_setpoint_var'].get()
+                setpoint_val = shared_gui_refs['fillhead_heater_setpoint_var'].get().split()[0]
             else:
                 setpoint_val = "---"
             shared_gui_refs['fillhead_heater_display_var'].set(f"{temp_val} / {setpoint_val} °C")
@@ -285,7 +285,7 @@ def create_gui_components(parent, shared_gui_refs):
             shared_gui_refs['fillhead_heater_display_var'].set("--- / --- °C")
 
     shared_gui_refs['fillhead_temp_c_var'].trace_add("write", update_heater_display)
-    shared_gui_refs['pid_setpoint_var'].trace_add("write", update_heater_display)
+    shared_gui_refs['fillhead_heater_setpoint_var'].trace_add("write", update_heater_display)
     shared_gui_refs['fillhead_heater_state_var'].trace_add("write", update_heater_display)
 
     def update_total_dispensed(*args):
